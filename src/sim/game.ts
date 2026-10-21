@@ -1,6 +1,7 @@
 import { buildSpawnQueue, modifierOf, rollModifier, updateEnemies } from './enemies';
 import { removeDead, updateUnits } from './combat';
 import { releaseBlocked, updateMinions } from './minions';
+import { updateQuiz } from './quiz';
 import type { GameState } from './types';
 
 const MAX_STEP = 0.05;
@@ -36,7 +37,7 @@ function endWave(state: GameState): void {
 }
 
 function step(state: GameState, dt: number): void {
-  // QUIZ TIMER HOOK (Task 9 nối vào đây)
+  updateQuiz(state, dt);
   if (state.phase === 'prep') {
     state.prepTimer -= dt;
     if (state.prepTimer <= 0) startWave(state);

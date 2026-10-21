@@ -6,6 +6,7 @@ import { CLASSES, LEVEL_DAMAGE, SKILLS, SKILL_COOLDOWN_PER_LEVEL, type ClassDef,
 import { ENEMIES, ENEMY_SCALING, type EnemyDef, type EnemyScaling } from './enemies';
 import { WAVES, type WaveDef } from './waves';
 import { MODIFIERS, MODIFIER_RULES, type ModifierDef, type ModifierRules } from './modifiers';
+import { QUIZ, type QuizConfig } from './quiz';
 import type { ClassId, EnemyKind, ModifierId } from '../sim/types';
 
 export type { WaveDef, EnemyDef, EnemyScaling, ModifierDef, ModifierRules };
@@ -26,6 +27,7 @@ export interface GameConfig {
   skills: SkillsConfig;
   /** Giảm hồi chiêu skill mỗi cấp (0.08 = 8%). */
   skillCooldownPerLevel: number;
+  quiz: QuizConfig;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -41,4 +43,5 @@ export const DEFAULT_CONFIG: GameConfig = {
   modifierRules: MODIFIER_RULES,
   skills: SKILLS,
   skillCooldownPerLevel: SKILL_COOLDOWN_PER_LEVEL,
+  quiz: QUIZ,
 };

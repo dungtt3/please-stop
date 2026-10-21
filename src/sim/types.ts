@@ -74,7 +74,6 @@ export interface Minion {
   lifetime: number;
 }
 
-/** Task 9 sẽ chính thức hóa. */
 export interface QuizQuestion {
   text: string;
   answer: number;
