@@ -1,6 +1,8 @@
 import { DEFAULT_CONFIG, type GameConfig } from '../config';
 import { enumOptions, exportConfig, importConfig, isFixedArray, mergeConfig, stripIndices } from '../settings/configStore';
 import { labelFor } from '../settings/labels';
+import type { ConfigSource } from '../settings/resolveConfig';
+import type { CloudClear, CloudWrite } from '../net/cloud';
 
 export interface ConfigMenuOptions {
   current: GameConfig;
@@ -10,6 +12,25 @@ export interface ConfigMenuOptions {
   /** Xóa bản lưu; trả false nếu không xóa được. */
   onReset?(): boolean | void;
   onClose(): void;
+  /** Nguồn cấu hình đang dùng cho ván hiện tại. */
+  source?: ConfigSource;
+  /** ISO time cập nhật cấu hình cloud (nếu có). */
+  cloudUpdatedAt?: string | null;
+  /** Cấu hình dùng khi bỏ bản riêng của trình duyệt (cloud nếu có, không thì mặc định). */
+  fallback?(): GameConfig;
+  onCloudSave?(code: string, cfg: GameConfig): Promise<CloudWrite>;
+  onCloudClear?(code: string): Promise<CloudClear>;
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+function sourceLine(source: ConfigSource | undefined, updatedAt: string | null | undefined): string {
+  if (source === 'local') return 'Đang dùng: cấu hình trong trình duyệt này';
+  if (source === 'cloud') {
+    const d = updatedAt ? new Date(updatedAt) : null;
+    const t = d && !Number.isNaN(d.getTime()) ? ` (cập nhật ${pad2(d.getHours())}:${pad2(d.getMinutes())} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)})` : '';
+    return `Đang dùng: cấu hình cloud${t}`;
+  }
+  return 'Đang dùng: mặc định';
 }
 
 type Obj = Record<string, unknown>;
@@ -27,6 +48,8 @@ const SECTIONS: { title: string; keys: string[] }[] = [
   { title: 'Quiz', keys: ['quiz'] },
   { title: 'Map', keys: ['map'] },
 ];
+
+const RESET_LABEL = 'Bỏ cấu hình riêng của trình duyệt này';
 
 const CSS = `
 .cfgm-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,16,.82);display:flex;justify-content:center;align-items:stretch;font:15px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;color:#e8ebf5}
@@ -46,6 +69,10 @@ const CSS = `
 .cfgm-status.ok{color:#81c784}
 .cfgm-status.bad{color:#ff8a80}
 .cfgm-errors{margin:0 0 10px;padding:8px 10px 8px 26px;border:1px solid #b71c1c;border-radius:6px;background:rgba(183,28,28,.15);color:#ffab91;font-size:13px;max-height:160px;overflow:auto}
+.cfgm-cloud{margin:0 0 10px;padding:8px 10px;border:1px solid #2f3650;border-radius:6px;background:#161a24}
+.cfgm-cloud-src{margin:0 0 6px;font-size:14px;color:#c9cfe3}
+.cfgm-cloud-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cfgm-cloud-note{margin:6px 0 0;font-size:12px;color:#9aa3bd}
 .cfgm-errors:empty{display:none}
 details.cfgm-group{margin:4px 0;border:1px solid #2a3042;border-radius:6px;background:#161a24}
 details.cfgm-group>summary{cursor:pointer;padding:10px 12px;min-height:24px;font-weight:600;list-style:revert}
@@ -123,7 +150,30 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   const status = el('p', 'cfgm-status');
   const errBox = el('ul', 'cfgm-errors');
   const btns = el('div', 'cfgm-btns');
-  foot.append(status, btns);
+  const cloudBox = el('div', 'cfgm-cloud');
+  cloudBox.appendChild(el('p', 'cfgm-cloud-src', sourceLine(opts.source, opts.cloudUpdatedAt)));
+  const cloudRow = el('div', 'cfgm-cloud-row');
+  const codeIn = el('input', 'cfgm-in wide');
+  codeIn.type = 'password';
+  codeIn.autocomplete = 'off';
+  codeIn.placeholder = 'Mã quản trị';
+  codeIn.setAttribute('aria-label', 'Mã quản trị');
+  try {
+    codeIn.value = sessionStorage.getItem('ps.adminCode') ?? '';
+  } catch {
+    /* bị chặn lưu trữ */
+  }
+  const cloudSaveBtn = el('button', 'cfgm-btn', 'Lưu lên cloud (áp dụng cho mọi người)');
+  cloudSaveBtn.type = 'button';
+  const cloudClearBtn = el('button', 'cfgm-btn', 'Gỡ cấu hình cloud (về mặc định)');
+  cloudClearBtn.type = 'button';
+  const cloudClearNo = el('button', 'cfgm-btn', 'Hủy');
+  cloudClearNo.type = 'button';
+  cloudClearNo.style.display = 'none';
+  cloudRow.append(codeIn, cloudSaveBtn, cloudClearBtn, cloudClearNo);
+  cloudBox.append(cloudRow, el('p', 'cfgm-cloud-note', 'Cấu hình cloud áp dụng cho mọi người chơi (ván sau). Cần mã quản trị. Người có bản riêng trong trình duyệt vẫn dùng bản riêng.'));
+  if (!opts.onCloudSave) cloudBox.style.display = 'none';
+  foot.append(cloudBox, status, btns);
   panel.append(head, body, foot);
 
   const mkBtn = (text: string, cls = ''): HTMLButtonElement => {
@@ -134,7 +184,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   };
   const saveBtn = mkBtn('Lưu', 'primary');
   const applyBtn = mkBtn('Áp dụng & chơi lại');
-  const resetBtn = mkBtn('Khôi phục mặc định');
+  const resetBtn = mkBtn(RESET_LABEL);
   const resetNo = mkBtn('Hủy');
   resetNo.style.display = 'none';
   const exportBtn = mkBtn('Xuất JSON');
@@ -153,7 +203,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
 
   /** Lỗi gộp (ràng buộc chéo, số âm...) của bản nháp hiện tại. */
   const draftErrors = (): string[] => mergeConfig(DEFAULT_CONFIG, draft).errors;
-  const refreshSave = (): void => {
+  let refreshSave = (): void => {
     const errs = draftErrors();
     const blocked = invalid.size > 0 || errs.length > 0;
     saveBtn.disabled = blocked;
@@ -384,7 +434,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   document.addEventListener('keydown', onKey, true);
 
   const cancelResetConfirm = (): void => {
-    resetBtn.textContent = 'Khôi phục mặc định';
+    resetBtn.textContent = RESET_LABEL;
     resetBtn.classList.remove('danger');
     resetNo.style.display = 'none';
   };
@@ -408,19 +458,79 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     if (resetBtn.classList.contains('danger')) {
       cancelResetConfirm();
       const ok = opts.onReset?.();
-      draft = structuredClone(DEFAULT_CONFIG);
+      draft = structuredClone(opts.fallback ? opts.fallback() : DEFAULT_CONFIG);
       invalid.clear();
       errBox.dataset.import = '';
       renderForm();
-      if (ok === false) setStatus('Đã đặt về mặc định trong form nhưng không xóa được bản lưu.', 'bad');
-      else setStatus('Đã khôi phục mặc định. Sẽ áp dụng từ ván sau.', 'ok');
+      if (ok === false) setStatus('Đã đặt lại form nhưng không xóa được bản lưu trong trình duyệt.', 'bad');
+      else setStatus('Đã bỏ cấu hình riêng (dùng cấu hình cloud nếu có, không thì mặc định). Áp dụng từ ván sau.', 'ok');
     } else {
-      resetBtn.textContent = 'Bấm lần nữa để xác nhận khôi phục';
+      resetBtn.textContent = 'Bấm lần nữa để xác nhận';
       resetBtn.classList.add('danger');
       resetNo.style.display = '';
     }
   });
   resetNo.addEventListener('click', cancelResetConfirm);
+
+  // ---------- Cloud ----------
+  const rememberCode = (): string => {
+    const code = codeIn.value;
+    try {
+      sessionStorage.setItem('ps.adminCode', code);
+    } catch {
+      /* bỏ qua */
+    }
+    return code;
+  };
+  const cloudErr = (e: 'code' | 'network' | 'offline'): string => (e === 'code' ? 'Sai mã quản trị' : 'Không kết nối được Supabase');
+  const cancelClearConfirm = (): void => {
+    cloudClearBtn.textContent = 'Gỡ cấu hình cloud (về mặc định)';
+    cloudClearBtn.classList.remove('danger');
+    cloudClearNo.style.display = 'none';
+  };
+  let cloudBusy = false;
+  const setCloudBusy = (b: boolean): void => {
+    cloudBusy = b;
+    cloudSaveBtn.disabled = b || saveBtn.disabled;
+    cloudClearBtn.disabled = b;
+  };
+  const syncCloudSave = (): void => {
+    cloudSaveBtn.disabled = cloudBusy || saveBtn.disabled;
+  };
+  const baseRefresh = refreshSave;
+  refreshSave = (): void => {
+    baseRefresh();
+    syncCloudSave();
+  };
+  cloudSaveBtn.addEventListener('click', async () => {
+    if (cloudBusy || !opts.onCloudSave || saveBtn.disabled) return;
+    cancelClearConfirm();
+    const code = rememberCode();
+    setCloudBusy(true);
+    setStatus('Đang lưu lên cloud...');
+    const r = await opts.onCloudSave(code, structuredClone(draft));
+    setCloudBusy(false);
+    if (r.ok) setStatus('Đã lưu lên cloud — người chơi nhận bộ số mới ở ván sau', 'ok');
+    else setStatus(cloudErr(r.error), 'bad');
+  });
+  cloudClearBtn.addEventListener('click', async () => {
+    if (cloudBusy || !opts.onCloudClear) return;
+    if (!cloudClearBtn.classList.contains('danger')) {
+      cloudClearBtn.textContent = 'Bấm lần nữa để gỡ cho mọi người';
+      cloudClearBtn.classList.add('danger');
+      cloudClearNo.style.display = '';
+      return;
+    }
+    cancelClearConfirm();
+    const code = rememberCode();
+    setCloudBusy(true);
+    setStatus('Đang gỡ cấu hình cloud...');
+    const r = await opts.onCloudClear(code);
+    setCloudBusy(false);
+    if (r.ok) setStatus('Đã gỡ cấu hình cloud — người chơi về mặc định ở ván sau', 'ok');
+    else setStatus(cloudErr(r.error), 'bad');
+  });
+  cloudClearNo.addEventListener('click', cancelClearConfirm);
   exportBtn.addEventListener('click', () => {
     const blob = new Blob([exportConfig(draft)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

@@ -16,7 +16,11 @@ import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
 import { Banner, Toast } from '../ui/Toast';
 import { openConfigMenu } from '../ui/ConfigMenu';
-import { browserStore, loadConfig, resetConfig, saveConfig } from '../settings/configStore';
+import { browserStore, loadSavedConfig, resetConfig, saveConfig } from '../settings/configStore';
+import { resolveConfig, type ConfigSource } from '../settings/resolveConfig';
+import { configHash } from '../settings/configHash';
+import { clearActiveConfig, recordRun, saveActiveConfig } from '../net/cloud';
+import { clearCloudCache, getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 
 const DRAG_THRESHOLD = 8;
@@ -41,6 +45,9 @@ export class GameScene extends Phaser.Scene {
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
+  private source: ConfigSource = 'default';
+  private runSeconds = 0;
+  private runRecorded = false;
   private drag: { slot: number; startX: number; startY: number; x: number; y: number; moving: boolean } | null = null;
 
   constructor() {
@@ -48,7 +55,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.state = createGame(Date.now(), loadConfig(browserStore()));
+    this.state = createGame(Date.now(), this.resolveCfg().config);
+    this.runSeconds = 0;
+    this.runRecorded = false;
     this.board = this.add.graphics().setDepth(0);
     this.dyn = this.add.graphics().setDepth(10);
     this.topBar = new TopBar(
@@ -83,7 +92,13 @@ export class GameScene extends Phaser.Scene {
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
   restart(cfg?: GameConfig): void {
-    this.state = createGame(Date.now(), cfg ?? loadConfig(browserStore()));
+    const r = this.resolveCfg();
+    this.state = createGame(Date.now(), cfg ?? r.config);
+    if (cfg) this.source = 'local';
+    this.runSeconds = 0;
+    this.runRecorded = false;
+    // Tải nền để ván sau nhận cấu hình cloud mới nhất, không chặn ván này.
+    void refreshCloudCache().catch(() => undefined);
     this.selectedUnitId = null;
     this.drag = null;
     this.speed = 1;
@@ -95,13 +110,33 @@ export class GameScene extends Phaser.Scene {
     this.drawBoard();
   }
 
+  private resolveCfg(): ReturnType<typeof resolveConfig> {
+    const r = resolveConfig({ local: loadSavedConfig(browserStore()), cloud: getCloudCache()?.config ?? null });
+    this.source = r.source;
+    if (r.errors.length) console.warn('Cấu hình cloud có giá trị không hợp lệ, đã dùng mặc định cho các trường đó:', r.errors);
+    return r;
+  }
+
   /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
   private openMenu(): void {
     if (this.menuOpen) return;
     this.menuOpen = true;
     this.drag = null;
     openConfigMenu({
-      current: loadConfig(browserStore()),
+      current: structuredClone(this.state.config),
+      source: this.source,
+      cloudUpdatedAt: getCloudCache()?.updatedAt ?? null,
+      fallback: () => resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config,
+      onCloudSave: async (code, cfg) => {
+        const r = await saveActiveConfig(code, cfg);
+        if (r.ok) await refreshCloudCache();
+        return r;
+      },
+      onCloudClear: async (code) => {
+        const r = await clearActiveConfig(code);
+        if (r.ok) clearCloudCache();
+        return r;
+      },
       onSave: (cfg) => saveConfig(browserStore(), cfg),
       onApplyAndRestart: (cfg) => {
         const saved = saveConfig(browserStore(), cfg);
@@ -211,7 +246,16 @@ export class GameScene extends Phaser.Scene {
 
   update(_: number, delta: number): void {
     const s = this.state;
-    if (!this.menuOpen) tick(s, Math.min(delta / 1000, 0.25) * this.speed);
+    if (!this.menuOpen) {
+      const dt = Math.min(delta / 1000, 0.25) * this.speed;
+      const live = s.phase !== 'won' && s.phase !== 'lost';
+      tick(s, dt);
+      if (live) this.runSeconds += dt;
+    }
+    if (!this.runRecorded && (s.phase === 'won' || s.phase === 'lost')) {
+      this.runRecorded = true;
+      void recordRun({ waveReached: s.wave, won: s.phase === 'won', kills: s.kills, durationS: this.runSeconds, configHash: configHash(s.config) });
+    }
     this.render();
     this.topBar.update(s, this.speed);
     this.bottomBar.update(s);

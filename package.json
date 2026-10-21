@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/dungtt3/please-stop#readme",
   "dependencies": {
+    "@supabase/supabase-js": "2.117.2",
     "phaser": "3.90.0"
   },
   "devDependencies": {
