@@ -1,0 +1,35 @@
+{
+  "name": "please-stop",
+  "version": "1.0.0",
+  "description": "",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "balance": "vite-node scripts/balance.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dungtt3/please-stop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/dungtt3/please-stop/issues"
+  },
+  "homepage": "https://github.com/dungtt3/please-stop#readme",
+  "dependencies": {
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.7"
+  },
+  "private": true
+}
