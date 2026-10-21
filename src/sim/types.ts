@@ -1,3 +1,7 @@
+import type { GameConfig } from '../config';
+import type { MapDef } from './path';
+import type { Rng } from './rng';
+
 export interface Vec {
   x: number;
   y: number;
@@ -36,3 +40,92 @@ export interface UnitStats {
   critChance: number;
   critMultiplier: number;
 }
+
+export type Phase = 'prep' | 'wave' | 'won' | 'lost';
+export type EnemyKind = 'normal' | 'fast' | 'tank' | 'boss';
+export type ModifierId = 'frenzy' | 'goldRain' | 'swarm' | 'ironArmor' | 'darkness';
+
+export interface Enemy {
+  id: number;
+  kind: EnemyKind;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  distance: number;
+  armor: number;
+  leakDamage: number;
+  goldDrop: number;
+  minionDps: number;
+  blockedBy: number | null;
+  burn: { dps: number; remaining: number } | null;
+  dead: boolean;
+}
+
+export interface Minion {
+  id: number;
+  ownerId: number;
+  pos: Vec;
+  pathDistance: number;
+  hp: number;
+  maxHp: number;
+  damage: number;
+  attackCooldown: number;
+  lifetime: number;
+}
+
+/** Task 9 sẽ chính thức hóa. */
+export interface QuizQuestion {
+  text: string;
+  answer: number;
+  options: number[];
+}
+
+export interface QuizState {
+  question: QuizQuestion;
+  elapsed: number;
+  result: null | 'correct' | 'wrong' | 'timeout';
+}
+
+export type GameEvent =
+  | { type: 'damage'; pos: Vec; amount: number; crit: boolean }
+  | { type: 'kill'; pos: Vec; gold: number }
+  | { type: 'leak'; amount: number }
+  | { type: 'skill'; unitId: number; skill: string; pos: Vec }
+  | { type: 'cardGranted'; card: Card }
+  | { type: 'cardConverted'; gold: number }
+  | { type: 'waveStart'; wave: number }
+  | { type: 'waveEnd'; wave: number; reward: number };
+
+export interface GameState {
+  rng: Rng;
+  config: GameConfig;
+  map: MapDef;
+  pathLen: number;
+  phase: Phase;
+  hp: number;
+  gold: number;
+  /** wave hiện tại hoặc sắp tới, 1..15 */
+  wave: number;
+  prepTimer: number;
+  /** id unit theo slot */
+  slots: (number | null)[];
+  units: Map<number, Unit>;
+  hand: Card[];
+  summonCount: number;
+  drawCount: number;
+  luckLevel: number;
+  enemies: Enemy[];
+  minions: Minion[];
+  spawnQueue: { kind: EnemyKind; at: number }[];
+  waveTime: number;
+  modifier: ModifierId | null;
+  quiz: QuizState | null;
+  quizUsedThisPrep: boolean;
+  kills: number;
+  events: GameEvent[];
+  nextId: number;
+}
+
+export type CommandResult =
+  | { ok: true }
+  | { ok: false; reason: 'gold' | 'noSlot' | 'handFull' | 'invalid' | 'maxLuck' | 'rangeCap' | 'gameOver' };
