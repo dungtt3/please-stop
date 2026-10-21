@@ -1,10 +1,5 @@
 import Phaser from 'phaser';
-
-class BootScene extends Phaser.Scene {
-  constructor() {
-    super('Boot');
-  }
-}
+import { GameScene } from './scenes/GameScene';
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -13,5 +8,5 @@ new Phaser.Game({
   parent: 'game',
   backgroundColor: '#12141c',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [BootScene],
+  scene: [GameScene],
 });
