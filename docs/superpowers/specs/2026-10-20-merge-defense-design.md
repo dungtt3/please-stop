@@ -214,6 +214,18 @@ Từ wave 2, mỗi wave có 50% cơ hội nhận một modifier, hiển thị tr
 - Chạm/nhấp vào một nhân vật: xem chỉ số cuối, độ hiếm, khoản cộng ngẫu nhiên, 2 skill, chỉ số cộng từ thẻ, vòng tầm đánh.
 - Tốc độ game ×1 / ×2.
 
+## 10b. Menu cấu hình cân bằng (người dùng đã xác nhận)
+- Dành cho **người thiết kế chỉnh cân bằng**, không phải cài đặt cho người chơi.
+- Nút ⚙ ở góc màn hình mở menu; chỉnh được **mọi con số** trong dữ liệu cân bằng: kinh tế (HP,
+  vàng khởi đầu, thời gian chuẩn bị, giá), độ hiếm và Luck, thẻ, từng nhân vật và skill, từng
+  loại quái, từng wave, từng modifier, quiz.
+- Thay đổi **áp dụng từ ván sau** (khi bấm "Chơi lại" hoặc nút "Áp dụng & chơi lại" trong menu),
+  không đổi ván đang chơi.
+- Lưu trong trình duyệt (localStorage), mở lại vẫn giữ. Nút "Khôi phục mặc định".
+- Xuất / nhập file JSON để giữ nhiều bộ cân bằng. File nhập sai hoặc thiếu trường thì báo lỗi
+  và giữ nguyên giá trị cũ cho trường đó.
+- Script cân bằng tự động (bot) cũng chạy được với một file cấu hình JSON.
+
 ## 11. Để người làm tự quyết
 - Bố cục cụ thể của map và vị trí các ô, miễn đúng ~15 ô và đường có khúc cua.
 - Mọi con số cân bằng ở trên là điểm khởi đầu — được chỉnh để ván chơi có độ khó hợp lý

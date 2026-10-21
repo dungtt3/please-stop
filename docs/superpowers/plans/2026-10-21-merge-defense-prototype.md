@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Web game tower/merge defense chơi được trọn một ván 15 wave trên trình duyệt: triệu hồi ngẫu nhiên, gộp, thẻ chỉ số, 4 lớp nhân vật có skill, quái đi theo đường, modifier wave, quiz toán.
+**Goal:** Web game tower/merge defense chơi được trọn một ván 15 wave trên trình duyệt: triệu hồi ngẫu nhiên, gộp, thẻ chỉ số, 4 lớp nhân vật có skill, quái đi theo đường, modifier wave, quiz toán — kèm menu chỉnh mọi con số cân bằng, áp dụng từ ván sau.
 
-**Architecture:** Toàn bộ luật chơi nằm trong `src/sim/` — TypeScript thuần, không import Phaser, test bằng Vitest, chạy bằng `tick(state, dt)` và các hàm lệnh (`summon`, `dragUnit`…). Số cân bằng nằm trong `src/config/`. Phaser (`src/scenes/`, `src/ui/`) chỉ đọc `GameState`, vẽ, và gọi hàm lệnh; sim phát `state.events` để phần vẽ hiện số sát thương, hiệu ứng.
+**Architecture:** Toàn bộ luật chơi nằm trong `src/sim/` — TypeScript thuần, không import Phaser, test bằng Vitest, chạy bằng `tick(state, dt)` và các hàm lệnh (`summon`, `dragUnit`…). Mọi số cân bằng gom vào một object `GameConfig` (giá trị mặc định ở `src/config/`), được chép vào `state.config` khi tạo ván; sim chỉ đọc số từ đó, nên menu cấu hình (Task 12) chỉ cần truyền config mới cho ván sau. Phaser (`src/scenes/`, `src/ui/`) chỉ đọc `GameState`, vẽ, và gọi hàm lệnh; sim phát `state.events` để phần vẽ hiện số sát thương, hiệu ứng.
 
 **Tech Stack:** Phaser 3.90.0, TypeScript 5.9.3, Vite 7.3.7, Vitest 3.2.7 (kèm `vite-node` để chạy script cân bằng). Node 24.
 
@@ -14,6 +14,8 @@
 
 - Mọi đơn vị vị trí/khoảng cách trong sim tính bằng **ô** (tile); tâm ô (c, r) là (c + 0.5, r + 0.5). Thời gian tính bằng **giây**.
 - `src/sim/**` và `src/config/**` không được import `phaser`.
+- **Không có hằng số cân bằng nào bị import trực tiếp vào logic sim.** `src/config/*.ts` export các phần của `DEFAULT_CONFIG: GameConfig` (`src/config/index.ts`). Hàm sim có `state` thì đọc `state.config`; hàm thuần không có `state` nhận `cfg: GameConfig` làm **tham số đầu tiên** (vd `summonCost(cfg, n)`, `computeStats(cfg, unit, rangeMult)`, `rollRarity(cfg, rng, luck, min?)`, `canMerge(cfg, a, b)`, `mergeUnits(cfg, a, b, id)`, `applyCardToUnit(cfg, unit, card)`, `activeCooldown(cfg, classId, level)`, `quizReward(cfg, wave, elapsed)`; `buildSpawnQueue(def, countMult)` giữ nguyên vì đã nhận dữ liệu). Chữ ký trong từng task bên dưới viết dạng ngắn — khi cài đặt thêm `cfg` theo quy tắc này; test truyền `DEFAULT_CONFIG`.
+- `GameConfig` chỉ chứa số, chuỗi, mảng và object thuần (serialize được JSON) — không có hàm.
 - Mọi phép ngẫu nhiên đi qua `state.rng` (seed được) — không dùng `Math.random` trong sim.
 - Khởi đầu ván: HP 20, vàng 100, giai đoạn chuẩn bị 15 giây, 15 wave, boss ở wave 10 và 15.
 - Triệu hồi: giá 20 + 5 × số lần đã triệu hồi. Rút thẻ: 25 + 5 × số lần đã rút. Luck: round(40 × 1.5^bậc hiện tại), tối đa 5 bậc.
@@ -39,6 +41,7 @@
 index.html
 package.json, tsconfig.json, vite.config.ts
 src/main.ts                     khởi tạo Phaser.Game
+src/config/index.ts             GameConfig + DEFAULT_CONFIG (gom các phần dưới)
 src/config/map.ts               DEFAULT_MAP
 src/config/characters.ts        chỉ số gốc + thông số skill 4 lớp
 src/config/cards.ts             giá trị thẻ, đổi vàng
@@ -60,6 +63,9 @@ src/sim/quiz.ts                 câu hỏi toán + thưởng
 src/sim/game.ts                 tick, vòng giai đoạn chuẩn bị/wave/thắng/thua
 src/scenes/GameScene.ts         vẽ map, nhân vật, quái, kéo thả
 src/ui/*.ts                     HUD, thanh dưới, tay bài, bảng chi tiết, quiz, kết quả
+src/settings/configStore.ts     tải/lưu/khôi phục/nhập/xuất cấu hình
+src/settings/labels.ts          nhãn tiếng Việt cho từng khóa cấu hình
+src/ui/ConfigMenu.ts            menu chỉnh cấu hình (DOM overlay)
 scripts/balance.ts              chạy nhiều ván tự động để cân bằng
 tests/sim/*.test.ts
 ```
@@ -126,7 +132,7 @@ test('validateMap bắt slot nằm trên đường và đoạn chéo', () => {
 ### Task 2: Nhân vật — độ hiếm, chỉ số, gộp, áp thẻ (hàm thuần)
 
 **Files:**
-- Create: `src/config/economy.ts`, `src/config/cards.ts`, `src/config/characters.ts`, `src/sim/units.ts`
+- Create: `src/config/economy.ts`, `src/config/cards.ts`, `src/config/characters.ts`, `src/config/index.ts`, `src/sim/units.ts`
 - Modify: `src/sim/types.ts`
 - Test: `tests/sim/units.test.ts`
 
@@ -140,9 +146,11 @@ test('validateMap bắt slot nằm trên đường và đoạn chéo', () => {
   - `interface Unit { id: number; classId: ClassId; level: number; rarity: Rarity; slot: number; bonus: { damage: number; attackSpeed: number }; cards: Record<CardStat, number>; goldInvested: number; attackCooldown: number; skillCooldown: number; passiveTimer: number; attackCount: number }`
   - `interface UnitStats { damage: number; attackSpeed: number; range: number; critChance: number; critMultiplier: number }`
 - Produces (config):
+  - (Các giá trị dưới đây là **trường của `GameConfig`**, đặt tên camelCase — vd `cfg.economy.startHp`, `cfg.economy.handLimit`, `cfg.cards.values`, `cfg.classes.archer.base` — không phải hằng số export riêng.)
   - `economy.ts`: `START_HP=20, START_GOLD=100, PREP_SECONDS=15, TOTAL_WAVES=15, MAX_LEVEL=5, HAND_LIMIT=5, RANGE_CARD_CAP=2, BASE_RARITY_WEIGHTS=[70,25,5], LUCK_STEP=[-4,3,1], MAX_LUCK=5`, `summonCost(n)`, `drawCost(n)`, `luckCost(level)`
   - `cards.ts`: `CARD_VALUES: Record<CardStat, Record<Rarity, number>>` = damage 0.10/0.20/0.40, attackSpeed 0.06/0.12/0.24, range 0.25/0.5/1, crit 0.03/0.06/0.12; `CARD_GOLD_VALUE: Record<Rarity, number>` = 10/25/60
   - `characters.ts`: `LEVEL_DAMAGE=[1,2.2,4.8,10,21]`, `CLASSES: Record<ClassId, { name: string; color: number; base: UnitStats; passive: string; active: string }>` — gốc: Kiếm sĩ dmg 20 / aspd 1.0 / tầm 1.5; Cung thủ 10 / 1.6 / 4; Pháp sư 14 / 0.8 / 3; Triệu hồi sư 6 / 0.8 / 2.5. Chí mạng gốc 0.05 (Cung thủ 0.20 = 0.05 + bị động 0.15), critMultiplier 2. `name/passive/active` là chữ tiếng Việt hiển thị. Thông số skill thêm ở Task 6–7.
+- Produces (`config/index.ts`): `interface GameConfig { map: MapDef; economy: …; cards: { values: …; goldValue: … }; classes: …; levelDamage: number[]; skills: … /* Task 6–7 */; enemies: … /* Task 4 */; waves: … /* Task 4 */; modifiers: … /* Task 4 */; quiz: … /* Task 9 */ }` và `DEFAULT_CONFIG`. Giá `summonCost/drawCost/luckCost` đọc từ `cfg.economy` (giá đầu + bước; giá Luck đầu + hệ số); `rarityWeights` đọc `cfg.economy.baseRarityWeights` và `luckStep`. Mỗi task sau thêm phần của mình vào `GameConfig`.
 - Produces (units.ts):
   - `rarityWeights(luckLevel: number): [number, number, number]`
   - `rollRarity(rng: Rng, luckLevel: number, minRarity?: Rarity): Rarity` — loại các độ hiếm thấp hơn `minRarity` rồi quay theo trọng số còn lại
@@ -240,8 +248,8 @@ test('giá', () => {
   - `interface Minion { id: number; ownerId: number; pos: Vec; pathDistance: number; hp: number; maxHp: number; damage: number; attackCooldown: number; lifetime: number }`
   - `interface QuizState { question: QuizQuestion; elapsed: number; result: null | 'correct' | 'wrong' | 'timeout' }` (`QuizQuestion` định nghĩa ở Task 9; ở task này khai báo trước `{ text: string; answer: number; options: number[] }`)
   - `type GameEvent = { type: 'damage'; pos: Vec; amount: number; crit: boolean } | { type: 'kill'; pos: Vec; gold: number } | { type: 'leak'; amount: number } | { type: 'skill'; unitId: number; skill: string; pos: Vec } | { type: 'cardGranted'; card: Card } | { type: 'cardConverted'; gold: number } | { type: 'waveStart'; wave: number } | { type: 'waveEnd'; wave: number; reward: number }`
-  - `interface GameState { rng: Rng; map: MapDef; pathLen: number; phase: Phase; hp: number; gold: number; wave: number /* wave hiện tại hoặc sắp tới, 1..15 */; prepTimer: number; slots: (number | null)[] /* id unit theo slot */; units: Map<number, Unit>; hand: Card[]; summonCount: number; drawCount: number; luckLevel: number; enemies: Enemy[]; minions: Minion[]; spawnQueue: { kind: EnemyKind; at: number }[]; waveTime: number; modifier: ModifierId | null; quiz: QuizState | null; quizUsedThisPrep: boolean; kills: number; events: GameEvent[]; nextId: number }`
-- Produces (state.ts): `createGame(seed: number, map: MapDef = DEFAULT_MAP): GameState` — phase 'prep', wave 1, prepTimer 15, HP 20, vàng 100, modifier null; `newId(state): number`.
+  - `interface GameState { rng: Rng; config: GameConfig; map: MapDef; pathLen: number; phase: Phase; hp: number; gold: number; wave: number /* wave hiện tại hoặc sắp tới, 1..15 */; prepTimer: number; slots: (number | null)[] /* id unit theo slot */; units: Map<number, Unit>; hand: Card[]; summonCount: number; drawCount: number; luckLevel: number; enemies: Enemy[]; minions: Minion[]; spawnQueue: { kind: EnemyKind; at: number }[]; waveTime: number; modifier: ModifierId | null; quiz: QuizState | null; quizUsedThisPrep: boolean; kills: number; events: GameEvent[]; nextId: number }`
+- Produces (state.ts): `createGame(seed: number, config: GameConfig = DEFAULT_CONFIG): GameState` — chép sâu config vào `state.config` (`structuredClone`); map lấy từ `config.map` — phase 'prep', wave 1, prepTimer 15, HP 20, vàng 100, modifier null; `newId(state): number`.
 - Produces (commands.ts), mỗi lệnh trả `CommandResult = { ok: true } | { ok: false; reason: 'gold' | 'noSlot' | 'handFull' | 'invalid' | 'maxLuck' | 'rangeCap' | 'gameOver' }` và không đổi state khi `ok: false`. Mọi lệnh từ chối với `'gameOver'` khi phase là won/lost.
   - `summon(state)` — kiểm tra vàng và ô trống; trừ giá; lớp ngẫu nhiên đều; `rollRarity` với luckLevel; `rollRandomBonus`; đặt vào ô trống ngẫu nhiên; `goldInvested` = giá vừa trả; `summonCount++`
   - `dragUnit(state, fromSlot: number, toSlot: number)` — ô đích trống → di chuyển; ô đích có con `canMerge` → `mergeUnits` (con mới ở toSlot, ô nguồn trống, xóa lính của cả hai con — gọi `removeMinionsOf` của Task 7, ở task này lọc `state.minions` theo ownerId); không gộp được → hoán đổi; from = to hoặc ô nguồn trống → invalid
@@ -484,7 +492,7 @@ test('gộp hai Triệu hồi sư xóa lính của cả hai', () => { /* … */ 
   - Kết thúc wave (queue rỗng và không còn quái): thưởng round((20 + 5 × wave) × waveRewardMult), phát `waveEnd`; wave 15 → 'won'; ngược lại `wave++`, 'prep', `prepTimer = 15`, `modifier = rollModifier(rng, wave)`, `quizUsedThisPrep = false`, xóa toàn bộ lính, đặt lại `attackCooldown`.
   - Nhân vật chỉ đánh và dùng skill trong phase 'wave'.
   - `scripts/bot.ts`: `runBot(seed: number): GameState` — "bot" đơn giản (triệu hồi khi đủ vàng và còn ô, gộp mọi cặp gộp được, áp mọi thẻ vào con cấp cao nhất, mua Luck khi dư > 200), `tick` 0.05s đến khi kết thúc.
-  - `scripts/balance.ts`: gọi `runBot` cho seed 1..20, in wave đạt được từng seed và trung bình.
+  - `scripts/balance.ts`: gọi `runBot` cho seed 1..20, in wave đạt được từng seed và trung bình. Tham số tùy chọn `--config path.json` (file xuất từ menu ở Task 12) → nạp qua `importConfig` rồi chạy với config đó; `runBot(seed, config = DEFAULT_CONFIG)`. Cờ `--config` được thêm ở Task 12.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -519,7 +527,8 @@ test('ván tự chơi với bot kết thúc thắng hoặc thua, không có NaN'
 **Interfaces:**
 - Produces:
   - `interface QuizQuestion { text: string /* vd "7 × 8 = ?" dùng ký tự + − × ÷ */; answer: number; options: number[] /* 4 số khác nhau, chứa answer, đã xáo */ }`
-  - `generateQuestion(rng, wave): QuizQuestion` —
+  - Phần `quiz` của `GameConfig`: `timeLimit 8, fastTime 3, fastGoldMult 2, baseGold 10, goldPerWave 3, bands` (mỗi band `{ fromWave, ops: ('+' | '-' | '*' | '/')[], addMax, mulMax }`) theo 3 dải dưới đây.
+  - `generateQuestion(cfg, rng, wave): QuizQuestion` —
     - wave 1–5: + hoặc −, toán hạng 0–20, kết quả ≥ 0
     - wave 6–10: + − (0–20) hoặc × (2–9 × 2–9) hoặc ÷ (tích của 2–9 chia một thừa số)
     - wave 11–15: + − toán hạng 0–100, kết quả ≥ 0; × đến 12 × 12; ÷ tương ứng
@@ -605,3 +614,82 @@ Hành vi:
   - thu cửa sổ trình duyệt hẹp lại → game co giãn vừa khung, vẫn bấm được
   - thua → màn kết quả → "Chơi lại" bắt đầu ván mới sạch
 - [ ] **Step 4: Commit** `feat: bottom bar, card hand, unit panel, quiz modal and result screen`
+
+---
+
+### Task 12: Menu cấu hình cân bằng
+
+**Files:**
+- Create: `src/settings/configStore.ts`, `src/settings/labels.ts`, `src/ui/ConfigMenu.ts`
+- Modify: `src/scenes/GameScene.ts` (nút ⚙, `restart()` dùng config đã lưu), `src/ui/ResultScreen.ts`, `scripts/balance.ts` (cờ `--config`)
+- Test: `tests/settings/configStore.test.ts`
+
+**Interfaces:**
+- Consumes: `GameConfig`, `DEFAULT_CONFIG`, `createGame`, `validateMap`.
+- Produces (configStore.ts):
+  - `interface KeyValueStore { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void }` (trình duyệt dùng `localStorage`, test dùng Map giả)
+  - `STORAGE_KEY = 'merge-defense.config.v1'`
+  - `mergeConfig(base: GameConfig, input: unknown): { config: GameConfig; errors: string[] }` — duyệt theo **hình dạng của `base`**: số chỉ nhận số hữu hạn; chuỗi enum (vd `kind` của quái) phải thuộc tập hợp lệ; mảng độ dài cố định (`levelDamage`, `baseRarityWeights`, `luckStep`) phải đúng độ dài; mảng độ dài tự do (`waves`, `groups`, `map.path`, `map.slots`) nhận phần tử mới theo hình dạng phần tử đầu của base; khóa lạ bị bỏ qua; khóa thiếu giữ giá trị base. Giá trị sai → giữ base, thêm lỗi dạng `"enemies.tank.hp: phải là số"`. Sau khi gộp kiểm tra ràng buộc chéo: tổng `baseRarityWeights` > 0, `waves.length ≥ 1`, `validateMap` không lỗi, số không âm (trừ `luckStep`) — vi phạm thì báo lỗi và dùng lại phần base tương ứng.
+  - `loadConfig(store): GameConfig` — trống / JSON hỏng → `DEFAULT_CONFIG`; có → `mergeConfig(DEFAULT_CONFIG, parsed).config`
+  - `saveConfig(store, cfg)`, `resetConfig(store)`
+  - `exportConfig(cfg): string` (JSON thụt lề 2), `importConfig(text): { config; errors }` (không parse được → `DEFAULT_CONFIG` kèm lỗi "File không phải JSON hợp lệ")
+- Produces (labels.ts): `LABELS: Record<string, string>` theo đường dẫn khóa có ký tự đại diện (`"enemies.*.hp": "Máu"`, `"economy.startGold": "Vàng khởi đầu"`); `labelFor(path: string): string` (không có nhãn → trả khóa cuối).
+- Produces (ConfigMenu.ts): `openConfigMenu(opts: { current: GameConfig; onSave(cfg: GameConfig): void; onApplyAndRestart(cfg: GameConfig): void; onClose(): void }): void`
+
+Hành vi menu (spec mục 10b):
+- **DOM overlay** (HTML phủ lên canvas), không vẽ bằng Phaser — để ô nhập số, cuộn và chọn file hoạt động tự nhiên trên PC lẫn điện thoại. Mở menu thì ván tạm dừng (scene bỏ qua `tick`), đóng thì chạy tiếp.
+- Form **sinh tự động từ cấu trúc `GameConfig`** (đệ quy): object → nhóm thu gọn được; số → `<input type="number" step="any">`; chuỗi enum → `<select>`; mảng độ dài tự do → danh sách có "+ Thêm" / "× Xóa". Nhóm cấp cao theo thứ tự: Kinh tế, Độ hiếm & Luck, Thẻ, Nhân vật, Skill, Quái, Wave, Modifier, Quiz, Map. Khóa mới thêm vào `GameConfig` sau này tự xuất hiện, chỉ cần thêm nhãn.
+- Ô khác mặc định được đánh dấu chấm màu và có nút ↺ trả riêng ô đó về mặc định.
+- Nút: "Lưu" (lưu; ván hiện tại giữ nguyên; hiện "Sẽ áp dụng từ ván sau"), "Áp dụng & chơi lại" (lưu + `restart()`), "Khôi phục mặc định" (xác nhận bằng nút thứ hai trong menu, không dùng `confirm()`), "Xuất JSON" (tải `merge-defense-config.json`), "Nhập JSON" (chọn file → `importConfig` → nạp vào form, hiện danh sách lỗi), "Đóng".
+- Ô trống hoặc không hợp lệ → viền đỏ, khóa nút Lưu đến khi sửa.
+- `GameScene.restart()` và "Chơi lại" luôn gọi `createGame(Date.now(), loadConfig(localStorage))`; lần mở game đầu tiên cũng vậy.
+
+- [ ] **Step 1: Viết test thất bại**
+
+```ts
+const mem = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
+test('chưa lưu gì → mặc định', () => expect(loadConfig(mem())).toEqual(DEFAULT_CONFIG));
+test('lưu rồi tải lại giữ nguyên thay đổi', () => {
+  const st = mem(); const c = structuredClone(DEFAULT_CONFIG); c.economy.startGold = 500; c.enemies.tank.hp = 999;
+  saveConfig(st, c); expect(loadConfig(st)).toEqual(c);
+});
+test('giá trị sai kiểu bị bỏ, giữ mặc định, báo lỗi theo đường dẫn', () => {
+  const r = mergeConfig(DEFAULT_CONFIG, { enemies: { tank: { hp: 'nhiều' } }, economy: { startGold: 300 } });
+  expect(r.config.enemies.tank.hp).toBe(DEFAULT_CONFIG.enemies.tank.hp);
+  expect(r.config.economy.startGold).toBe(300);
+  expect(r.errors).toContain('enemies.tank.hp: phải là số');
+});
+test('mảng độ dài cố định sai độ dài bị từ chối', () => {
+  const r = mergeConfig(DEFAULT_CONFIG, { levelDamage: [1, 2] });
+  expect(r.config.levelDamage).toEqual(DEFAULT_CONFIG.levelDamage); expect(r.errors).toHaveLength(1);
+});
+test('thêm wave mới được nhận; kind lạ bị từ chối', () => {
+  const waves = [...DEFAULT_CONFIG.waves, { groups: [{ kind: 'normal', count: 5, interval: 1, delay: 0 }] }];
+  expect(mergeConfig(DEFAULT_CONFIG, { waves }).config.waves).toHaveLength(16);
+  const bad = mergeConfig(DEFAULT_CONFIG, { waves: [{ groups: [{ kind: 'rồng', count: 1, interval: 1, delay: 0 }] }] });
+  expect(bad.errors.length).toBeGreaterThan(0);
+});
+test('tổng trọng số độ hiếm bằng 0 bị từ chối', () => {
+  const r = mergeConfig(DEFAULT_CONFIG, { economy: { baseRarityWeights: [0, 0, 0] } });
+  expect(r.config.economy.baseRarityWeights).toEqual(DEFAULT_CONFIG.economy.baseRarityWeights);
+});
+test('JSON hỏng trong storage → mặc định', () => { const st = mem(); st.setItem(STORAGE_KEY, '{oops'); expect(loadConfig(st)).toEqual(DEFAULT_CONFIG); });
+test('xuất rồi nhập ra đúng config', () => {
+  const c = structuredClone(DEFAULT_CONFIG); c.quiz.timeLimit = 6;
+  expect(importConfig(exportConfig(c))).toEqual({ config: c, errors: [] });
+});
+test('ván mới dùng config truyền vào; sửa bản gốc không ảnh hưởng ván đang chạy', () => {
+  const c = structuredClone(DEFAULT_CONFIG); c.economy.startGold = 777;
+  const s = createGame(1, c); expect(s.gold).toBe(777);
+  c.economy.startGold = 1; expect(s.config.economy.startGold).toBe(777);
+});
+test('mọi khóa lá của DEFAULT_CONFIG có nhãn tiếng Việt', () => { /* duyệt đệ quy (bỏ qua chỉ số mảng), labelFor(path) khác khóa cuối */ });
+```
+
+- [ ] **Step 2: `npm test` — FAIL.**
+- [ ] **Step 3: Cài đặt `configStore.ts`, `labels.ts`.**
+- [ ] **Step 4: `npm test` — PASS.**
+- [ ] **Step 5: Cài đặt `ConfigMenu.ts`, nối vào `GameScene` / `ResultScreen`, thêm cờ `--config` cho `scripts/balance.ts`.** `npm run build` thành công.
+- [ ] **Step 6: Kiểm tra trên trình duyệt:** mở ⚙ → ván tạm dừng; đổi "Vàng khởi đầu" = 500 và Máu của Trâu → Lưu → ván hiện tại không đổi → Chơi lại → bắt đầu với 500 vàng; tải lại trang vẫn giữ; Xuất JSON → Khôi phục mặc định → Nhập lại file → về 500; nhập file hỏng → hiện lỗi, giá trị không đổi; thu hẹp cửa sổ → menu cuộn được, ô nhập dùng được.
+- [ ] **Step 7: `npm run balance -- --config merge-defense-config.json`** chạy được với file vừa xuất.
+- [ ] **Step 8: Commit** `feat: balance config menu with save, reset, import and export`
