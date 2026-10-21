@@ -75,7 +75,7 @@ Bản đầu tiên là **bản chơi thử** để cảm nhận vòng lặp game
 - Người chơi bán được bất kỳ nhân vật nào, bất cứ lúc nào (kể cả trong wave), ô trở nên trống.
 - Hoàn lại **50% số vàng đã bỏ ra cho con đó**, làm tròn xuống. Mỗi nhân vật lưu tổng vàng
   đầu tư: con triệu hồi = giá triệu hồi lúc đó; con gộp = tổng của hai con đem gộp.
-- Vàng nâng cấp theo loại (5.5) không được hoàn khi bán.
+- Thẻ chỉ số đã dùng lên con đó (5.5) và vàng mua Luck không được hoàn khi bán.
 - Lý do: tránh bàn cờ kín những con không gộp được khiến người chơi hết nước đi.
 
 ### 5.3 Chỉ số và cấp
@@ -83,12 +83,13 @@ Chỉ số mỗi nhân vật: **Sát thương, Tốc đánh (đòn/giây), Tầm
 Sát thương chí mạng** (mặc định ×2).
 
 Công thức (quyết định của người thiết kế):
-- **Sát thương** = gốc × hệ số cấp × (1 + nâng cấp %) × (1 + cộng ngẫu nhiên %).
+- **Sát thương** = gốc × hệ số cấp × (1 + thẻ %) × (1 + cộng ngẫu nhiên %).
   Hệ số cấp gợi ý ×1.0 / 2.2 / 4.8 / 10 / 21 cho cấp 1–5.
-- **Tốc đánh** = gốc × (1 + 0.1 × (cấp − 1)) × (1 + nâng cấp %) × (1 + cộng ngẫu nhiên %).
-- **Tầm đánh** = gốc + nâng cấp (cộng thẳng ô). Không tăng theo cấp.
-- **Chí mạng** = gốc + nâng cấp (cộng thẳng điểm %), tối đa 100%. Không tăng theo cấp.
-- Các nâng cấp % cộng dồn tuyến tính theo bậc (bậc 3 sát thương = +30%), không nhân lũy thừa.
+- **Tốc đánh** = gốc × (1 + 0.1 × (cấp − 1)) × (1 + thẻ %) × (1 + cộng ngẫu nhiên %).
+- **Tầm đánh** = gốc + thẻ (cộng thẳng ô). Không tăng theo cấp.
+- **Chí mạng** = gốc + thẻ (cộng thẳng điểm %), tối đa 100%. Không tăng theo cấp.
+- Các thẻ % trên cùng một con cộng dồn tuyến tính (2 thẻ +10% sát thương = +20%), không nhân lũy thừa.
+- Công thức này người dùng đã xác nhận.
 - Skill mạnh dần theo cấp (thời gian hồi ngắn hơn hoặc hiệu ứng lớn hơn, định nghĩa riêng từng skill).
 
 ### 5.4 Cộng ngẫu nhiên (độ hiếm)
@@ -101,25 +102,52 @@ Công thức (quyết định của người thiết kế):
 - **Khi gộp:** con mới lấy độ hiếm cao hơn trong hai con, và với mỗi chỉ số lấy khoản cộng
   cao hơn trong hai con. *(Quyết định của người thiết kế — có thể đổi thành quay lại ngẫu nhiên.)*
 
-### 5.5 Nâng cấp chỉ số (người chơi tự điều chỉnh)
-- Nâng cấp **theo loại nhân vật**, áp dụng cho mọi con thuộc loại đó (kể cả con triệu hồi sau).
-  Lý do: nâng từng con riêng sẽ rối khi gộp.
-- Mỗi loại có 4 dòng nâng cấp: Sát thương (+10%/bậc), Tốc đánh (+6%/bậc),
-  Tầm đánh (+0.25 ô/bậc, tối đa 4 bậc), Chí mạng (+3%/bậc).
-- Giá: 30 vàng bậc 1, nhân 1.5 mỗi bậc tiếp theo.
-- Thêm một nâng cấp chung **May mắn (Luck)**: mỗi bậc dời tỉ lệ độ hiếm khi triệu hồi về
-  phía Hiếm/Sử thi (ví dụ −4% Thường, +3% Hiếm, +1% Sử thi), tối đa 5 bậc.
+### 5.5 Thẻ chỉ số (người chơi tự điều chỉnh) — người dùng đã xác nhận
+- Chỉ số được nâng bằng **thẻ dùng một lần**, người chơi chọn thẻ rồi chọn **một nhân vật**
+  để áp lên. Thẻ biến mất sau khi dùng. Không còn nâng cấp theo loại.
+- Bốn loại thẻ, mỗi thẻ có độ hiếm:
 
-### 5.6 Năm loại nhân vật (bản chơi thử)
+  | Thẻ | Thường | Hiếm | Sử thi |
+  |---|---|---|---|
+  | Sát thương | +10% | +20% | +40% |
+  | Tốc đánh | +6% | +12% | +24% |
+  | Tầm đánh | +0.25 ô | +0.5 ô | +1 ô |
+  | Chí mạng | +3% | +6% | +12% |
+
+  Tổng tầm đánh cộng từ thẻ trên một con tối đa +2 ô. *(Con số là quyết định của người thiết kế.)*
+- **Cách nhận thẻ** (người dùng đã xác nhận):
+  - **Rút thẻ bằng vàng:** nút Rút thẻ, giá khởi đầu 25, tăng 5 sau mỗi lần rút. Loại thẻ
+    ngẫu nhiên đều; độ hiếm Thường 70% / Hiếm 25% / Sử thi 5%.
+  - **Quiz toán:** trả lời đúng được 1 thẻ (xem mục 8).
+  - **Boss:** hạ boss được 1 thẻ chắc chắn Hiếm trở lên.
+- **Tay bài** tối đa 5 thẻ. Đầy tay thì không rút được và phần thưởng thẻ bị đổi thành vàng
+  (Thường 10, Hiếm 25, Sử thi 60). Người chơi có thể bỏ thẻ. *(Quyết định của người thiết kế.)*
+- **Khi gộp:** chỉ số từ thẻ của hai con được **cộng dồn** sang con mới (tầm đánh vẫn tối đa +2 ô).
+- Trên nhân vật hiển thị chỉ số đã được thẻ cộng thêm khi xem chi tiết.
+- Áp thẻ được bất cứ lúc nào, kể cả trong wave.
+- **May mắn (Luck):** nút mua riêng bằng vàng (giá 40, ×1.5 mỗi bậc, tối đa 5 bậc), áp dụng
+  toàn ván. Mỗi bậc dời tỉ lệ độ hiếm của **cả triệu hồi lẫn rút thẻ** về phía Hiếm/Sử thi
+  (−4% Thường, +3% Hiếm, +1% Sử thi). *(Quyết định của người thiết kế.)*
+
+### 5.6 Bốn loại nhân vật (bản chơi thử) — người dùng đã chọn
 Mỗi loại có 1 skill **bị động** và 1 skill **tự kích hoạt theo thời gian hồi**.
+Kỹ năng cụ thể dưới đây là quyết định của người thiết kế.
 
 | Loại | Tầm | Kiểu đánh | Bị động | Tự kích hoạt (hồi chiêu) |
 |---|---|---|---|---|
 | Kiếm sĩ | 1.5 | Cận chiến, đánh mạnh | Đòn thứ 3 liên tiếp gây ×2 sát thương | Chém xoáy: sát thương mọi quái trong tầm (8s) |
 | Cung thủ | 4 | Bắn đơn mục tiêu, nhanh | +15% chí mạng | Mưa tên: 5 mũi tên vào 5 quái ngẫu nhiên trong tầm (7s) |
 | Pháp sư | 3 | Cầu lửa nổ diện nhỏ | Đòn đánh để lại cháy (sát thương theo thời gian) | Thiên thạch: nổ diện lớn tại quái đông nhất (12s) |
-| Băng sư | 3 | Bắn đơn, sát thương thấp | Đòn đánh làm chậm 30% trong 1.5s | Đóng băng mọi quái trong tầm 1.5s (10s) |
-| Lôi sư | 3.5 | Sét đánh lan | 10% cơ hội đòn đánh lan sang 3 quái gần | Gọi sét vào quái máu cao nhất (9s) |
+| Triệu hồi sư | 2.5 | Đòn phép đơn, yếu | Cứ 6s gọi 1 lính | Gọi một đợt 3 lính (14s) |
+
+**Lính của Triệu hồi sư:**
+- Xuất hiện trên ô đường đi gần nhất trong tầm của Triệu hồi sư, đứng yên **chặn đường**:
+  quái thường/nhanh/trâu chạm lính phải dừng lại đánh lính cho đến khi lính chết.
+- Lính có máu và tự đánh quái đang bị chặn. Máu và sát thương của lính theo chỉ số của
+  Triệu hồi sư (sát thương lính = 50% sát thương Triệu hồi sư; máu tăng theo cấp).
+- Lính tự biến mất sau 10s. Mỗi Triệu hồi sư tối đa 4 lính cùng lúc.
+- **Boss không bị chặn**: đi xuyên qua và giẫm chết lính.
+- Vì có lính, quái cần chỉ số sát thương khi đánh lính (thêm vào bảng quái ở 6.1).
 
 Mục tiêu mặc định: quái **đi xa nhất** trong tầm.
 
@@ -128,7 +156,7 @@ Mục tiêu mặc định: quái **đi xa nhất** trong tầm.
 ### 6.1 Loại quái
 | Loại | Máu | Tốc độ | Trừ HP khi lọt | Ghi chú |
 |---|---|---|---|---|
-| Thường | trung bình | trung bình | 1 | |
+| Thường | trung bình | trung bình | 1 | Đánh lính khi bị chặn (mọi quái thường đều có sát thương đánh lính) |
 | Nhanh | thấp | cao | 1 | |
 | Trâu | cao | thấp | 2 | Giáp: giảm 30% sát thương nhận |
 | Boss (wave 10, wave 15) | rất cao | thấp | 10 | Miễn nhiễm đóng băng, chỉ bị chậm một nửa |
@@ -151,7 +179,7 @@ Từ wave 2, mỗi wave có 50% cơ hội nhận một modifier, hiển thị tr
 ## 7. Chí mạng và proc
 - Mỗi đòn đánh quay chí mạng theo Tỉ lệ chí mạng → sát thương × Sát thương chí mạng.
 - Số sát thương bay lên khi đánh; chí mạng hiển thị khác màu/to hơn.
-- Các skill có tỉ lệ kích hoạt (như của Lôi sư) dùng chung một bộ quay ngẫu nhiên có thể
+- Các skill có tỉ lệ kích hoạt (như bị động của Cung thủ hay chí mạng) dùng chung một bộ quay ngẫu nhiên có thể
   đặt seed (để test và tái hiện lỗi).
 
 ## 8. Quiz toán
@@ -159,14 +187,15 @@ Từ wave 2, mỗi wave có 50% cơ hội nhận một modifier, hiển thị tr
 - Một phép tính + − × ÷ với số nguyên, 4 đáp án (1 đúng, 3 nhiễu gần đúng), đếm ngược **8 giây**.
 - Độ khó tăng theo wave: wave 1–5 cộng/trừ trong phạm vi 20; wave 6–10 thêm nhân/chia
   (bảng cửu chương, phép chia luôn chia hết); wave 11–15 số lớn hơn (đến 100, nhân đến 12×12).
-- Thưởng khi đúng: vàng = 10 + 3 × số wave, **nhân thêm theo tốc độ** (trả lời trong 3 giây
-  đầu ×2, sau đó giảm dần về ×1). Sai hoặc hết giờ: không thưởng, không phạt.
+- Thưởng khi đúng: **1 thẻ chỉ số** + vàng = 10 + 3 × số wave. Trả lời càng nhanh thì càng tốt:
+  trong 3 giây đầu, vàng ×2 và thẻ chắc chắn Hiếm trở lên; sau đó vàng giảm dần về ×1 và thẻ
+  quay độ hiếm bình thường. Sai hoặc hết giờ: không thưởng, không phạt.
 - Đếm ngược của quiz không làm dừng đồng hồ giai đoạn chuẩn bị.
 
 ## 9. Công nghệ và kiến trúc
 
 - **Phaser 3 + TypeScript**, build bằng **Vite**. Chạy hoàn toàn phía trình duyệt.
-- **Tách logic khỏi hiển thị:** phần mô phỏng (kinh tế, gộp, chỉ số, quay ngẫu nhiên, wave,
+- **Tách logic khỏi hiển thị:** phần mô phỏng (kinh tế, gộp, thẻ, chỉ số, quay ngẫu nhiên, wave, lính chặn đường,
   sát thương, quiz) viết bằng TypeScript thuần, không phụ thuộc Phaser, để test được bằng
   **Vitest**. Phaser chỉ đọc trạng thái và vẽ, chuyển thao tác người chơi thành lệnh.
 - **Dữ liệu cân bằng** (nhân vật, quái, wave, giá, tỉ lệ) nằm trong các file cấu hình riêng.
@@ -178,9 +207,11 @@ Từ wave 2, mỗi wave có 50% cơ hội nhận một modifier, hiển thị tr
 ## 10. Giao diện bản chơi thử
 - Thanh trên: HP tổng, vàng, wave hiện tại / 15, modifier của wave.
 - Giữa: map, đường đi, các ô, nhân vật, quái (có thanh máu).
-- Thanh dưới: nút Triệu hồi (kèm giá), nút Thử thách toán, nút Bắt đầu ngay (khi đang chuẩn bị).
-- Bảng nâng cấp: chọn một loại nhân vật → thấy 4 dòng nâng cấp và giá; nâng cấp Luck riêng.
-- Chạm/nhấp vào một nhân vật: xem chỉ số cuối, độ hiếm, khoản cộng ngẫu nhiên, 2 skill, vòng tầm đánh.
+- Thanh dưới: nút Triệu hồi (kèm giá), nút Rút thẻ (kèm giá), nút Luck, nút Thử thách toán,
+  nút Bắt đầu ngay (khi đang chuẩn bị).
+- Tay bài: tối đa 5 thẻ. Kéo thẻ thả lên nhân vật (hoặc chạm thẻ rồi chạm nhân vật) để áp.
+- Bán: nút Bán trong bảng chi tiết nhân vật, ghi rõ số vàng nhận lại.
+- Chạm/nhấp vào một nhân vật: xem chỉ số cuối, độ hiếm, khoản cộng ngẫu nhiên, 2 skill, chỉ số cộng từ thẻ, vòng tầm đánh.
 - Tốc độ game ×1 / ×2.
 
 ## 11. Để người làm tự quyết
@@ -191,8 +222,9 @@ Từ wave 2, mỗi wave có 50% cơ hội nhận một modifier, hiển thị tr
 - Cấu trúc thư mục và cách tổ chức code.
 
 ## 12. Những quyết định do người thiết kế đưa ra (người dùng chưa xác nhận)
-- Công thức chỉ số ở 5.3 (cấp chỉ tăng sát thương và một ít tốc đánh; tầm và chí mạng cộng thẳng).
-- Gộp: giữ độ hiếm và khoản cộng cao hơn.
-- Bỏ hệ thống "lên cấp chọn 1/3 thẻ" và shop riêng ở bản chơi thử; vai trò này do triệu hồi + nâng cấp đảm nhận.
-- Danh sách 5 nhân vật, 3 quái + boss, các modifier, và mọi con số.
-- Cách tính "vàng đã bỏ ra" khi bán con đã gộp, và không hoàn vàng nâng cấp.
+- Gộp: giữ độ hiếm và khoản cộng ngẫu nhiên cao hơn; chỉ số từ thẻ cộng dồn.
+- Bỏ "lên cấp chọn 1/3 thẻ" và shop riêng ở bản chơi thử.
+- Giá trị thẻ, giới hạn tay bài 5 thẻ, đổi thẻ thừa thành vàng, giới hạn tầm +2 ô.
+- Luck là nút mua riêng, ảnh hưởng cả triệu hồi và rút thẻ.
+- Kỹ năng cụ thể của 4 nhân vật, cơ chế lính chặn đường, boss không bị chặn.
+- 3 quái + boss, các modifier, và mọi con số cân bằng.
