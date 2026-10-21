@@ -17,9 +17,10 @@ test('số quái tăng dần theo wave', () => {
   expect(total(14)).toBeGreaterThan(total(0));
   expect(total(9)).toBeGreaterThan(total(0));
 });
-test('máu quái tăng 1.15 mỗi wave, swarm ×0.7', () => {
-  const s = createGame(1); s.wave = 3; expect(spawnEnemy(s, 'normal').hp).toBeCloseTo(60 * 1.15 ** 2);
-  s.modifier = 'swarm'; expect(spawnEnemy(s, 'normal').hp).toBeCloseTo(60 * 1.15 ** 2 * 0.7);
+test('máu quái tăng hpGrowth mỗi wave, swarm ×0.7', () => {
+  const g = DEFAULT_CONFIG.enemyScaling.hpGrowth;
+  const s = createGame(1); s.wave = 3; expect(spawnEnemy(s, 'normal').hp).toBeCloseTo(60 * g ** 2);
+  s.modifier = 'swarm'; expect(spawnEnemy(s, 'normal').hp).toBeCloseTo(60 * g ** 2 * 0.7);
 });
 test('goldDrop theo modifier', () => {
   const s = createGame(1); s.modifier = 'goldRain';

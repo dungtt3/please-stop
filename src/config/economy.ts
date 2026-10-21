@@ -22,6 +22,8 @@ export interface EconomyConfig {
   rarityBonus: Record<Rarity, [number, number]>;
   /** Tốc đánh nhân thêm (1 + factor * (cấp - 1)). */
   attackSpeedPerLevel: number;
+  /** Thưởng cuối wave = round((base + perWave * wave) * waveRewardMult). */
+  waveReward: { base: number; perWave: number };
 }
 
 export const ECONOMY: EconomyConfig = {
@@ -40,4 +42,5 @@ export const ECONOMY: EconomyConfig = {
   luckCost: { base: 40, mult: 1.5 },
   rarityBonus: { common: [0, 0.1], rare: [0.1, 0.25], epic: [0.25, 0.5] },
   attackSpeedPerLevel: 0.1,
+  waveReward: { base: 20, perWave: 5 },
 };

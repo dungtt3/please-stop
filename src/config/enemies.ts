@@ -23,4 +23,4 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   boss: { name: 'Trùm', hp: 2500, speed: 0.5, leak: 10, gold: 50, armor: 0, minionDps: 0, color: 0xd32f2f },
 };
 
-export const ENEMY_SCALING: EnemyScaling = { hpGrowth: 1.15 };
+export const ENEMY_SCALING: EnemyScaling = { hpGrowth: 1.35 };
