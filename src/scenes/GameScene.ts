@@ -117,6 +117,13 @@ export class GameScene extends Phaser.Scene {
     return r;
   }
 
+  /** Chỉ tạo bản riêng khi khác cấu hình đang đến từ cloud/mặc định (hoặc đã có bản riêng). */
+  private needsOverride(cfg: GameConfig): boolean {
+    if (loadSavedConfig(browserStore())) return true;
+    const base = resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config;
+    return configHash(cfg) !== configHash(base);
+  }
+
   /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
   private openMenu(): void {
     if (this.menuOpen) return;
@@ -125,6 +132,7 @@ export class GameScene extends Phaser.Scene {
     openConfigMenu({
       current: structuredClone(this.state.config),
       source: this.source,
+      hasOverride: () => loadSavedConfig(browserStore()) !== null,
       cloudUpdatedAt: getCloudCache()?.updatedAt ?? null,
       fallback: () => resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config,
       onCloudSave: async (code, cfg) => {
@@ -137,9 +145,9 @@ export class GameScene extends Phaser.Scene {
         if (r.ok) clearCloudCache();
         return r;
       },
-      onSave: (cfg) => saveConfig(browserStore(), cfg),
+      onSave: (cfg) => (this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true),
       onApplyAndRestart: (cfg) => {
-        const saved = saveConfig(browserStore(), cfg);
+        const saved = this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true;
         this.restart(cfg);
         if (!saved) this.toast.show('Không lưu được cấu hình — chỉ áp dụng cho ván này');
       },

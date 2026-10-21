@@ -11,8 +11,12 @@ export function resolveConfig(opts: { local: GameConfig | null; cloud: unknown |
 } {
   if (opts.local) return { config: structuredClone(opts.local), source: 'local', errors: [] };
   if (opts.cloud !== null && opts.cloud !== undefined) {
-    const r = mergeConfig(DEFAULT_CONFIG, opts.cloud);
-    return { config: r.config, source: 'cloud', errors: r.errors };
+    try {
+      const r = mergeConfig(DEFAULT_CONFIG, opts.cloud);
+      return { config: r.config, source: 'cloud', errors: r.errors };
+    } catch (e) {
+      return { config: structuredClone(DEFAULT_CONFIG), source: 'default', errors: [`cloud: cấu hình không đọc được (${String(e)})`] };
+    }
   }
   return { config: structuredClone(DEFAULT_CONFIG), source: 'default', errors: [] };
 }

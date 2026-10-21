@@ -114,9 +114,9 @@ export async function recordRun(r: { waveReached: number; won: boolean; kills: n
       sb
         .from('ps_runs')
         .insert({
-          wave_reached: r.waveReached,
+          wave_reached: Math.max(0, Math.min(100, Math.round(r.waveReached) || 0)),
           won: r.won,
-          kills: r.kills,
+          kills: Math.max(0, Math.min(1_000_000, Math.round(r.kills) || 0)),
           duration_s: Math.max(0, Math.min(86399, r.durationS)),
           config_hash: r.configHash,
         })

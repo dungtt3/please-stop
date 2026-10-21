@@ -67,3 +67,13 @@ describe('sanitizeName', () => {
     expect(sanitizeName('   ')).toBe('');
   });
 });
+
+describe('resolveConfig với cloud rác', () => {
+  test.each([[[]], [{ economy: null }], [{ waves: [null] }], ['str'], [42]])('không ném lỗi: %j', (junk) => {
+    const r = resolveConfig({ local: null, cloud: junk });
+    expect(r.config.economy.startGold).toBe(DEFAULT_CONFIG.economy.startGold);
+    expect(r.config.waves.length).toBeGreaterThan(0);
+    expect(r.errors.length).toBeGreaterThan(0);
+    expect(['cloud', 'default']).toContain(r.source);
+  });
+});
