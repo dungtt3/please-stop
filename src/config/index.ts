@@ -2,7 +2,7 @@ import type { MapDef } from '../sim/path';
 import { DEFAULT_MAP } from './map';
 import { ECONOMY, type EconomyConfig } from './economy';
 import { CARDS, type CardsConfig } from './cards';
-import { CLASSES, LEVEL_DAMAGE, type ClassDef } from './characters';
+import { CLASSES, LEVEL_DAMAGE, SKILLS, SKILL_COOLDOWN_PER_LEVEL, type ClassDef, type SkillsConfig } from './characters';
 import { ENEMIES, ENEMY_SCALING, type EnemyDef, type EnemyScaling } from './enemies';
 import { WAVES, type WaveDef } from './waves';
 import { MODIFIERS, MODIFIER_RULES, type ModifierDef, type ModifierRules } from './modifiers';
@@ -23,6 +23,9 @@ export interface GameConfig {
   waves: WaveDef[];
   modifiers: Record<ModifierId, ModifierDef>;
   modifierRules: ModifierRules;
+  skills: SkillsConfig;
+  /** Giảm hồi chiêu skill mỗi cấp (0.08 = 8%). */
+  skillCooldownPerLevel: number;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -36,4 +39,6 @@ export const DEFAULT_CONFIG: GameConfig = {
   waves: WAVES,
   modifiers: MODIFIERS,
   modifierRules: MODIFIER_RULES,
+  skills: SKILLS,
+  skillCooldownPerLevel: SKILL_COOLDOWN_PER_LEVEL,
 };

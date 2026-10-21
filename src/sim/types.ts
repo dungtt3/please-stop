@@ -57,7 +57,8 @@ export interface Enemy {
   goldDrop: number;
   minionDps: number;
   blockedBy: number | null;
-  burn: { dps: number; remaining: number } | null;
+  /** acc/timer: sát thương cháy chờ phát event damage gộp mỗi 0.5s. */
+  burn: { dps: number; remaining: number; acc: number; timer: number } | null;
   dead: boolean;
 }
 

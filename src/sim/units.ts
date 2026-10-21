@@ -1,5 +1,6 @@
 import type { GameConfig } from '../config';
 import type { Rng } from './rng';
+import { activeCooldown } from './skills';
 import { RARITY_ORDER } from './types';
 import type { Card, CardStat, ClassId, Rarity, Unit, UnitStats } from './types';
 
@@ -42,7 +43,7 @@ export function rollRandomBonus(cfg: GameConfig, rng: Rng, rarity: Rarity): { da
 }
 
 export function createUnit(
-  _cfg: GameConfig, id: number, classId: ClassId, slot: number, rarity: Rarity,
+  cfg: GameConfig, id: number, classId: ClassId, slot: number, rarity: Rarity,
   bonus: { damage: number; attackSpeed: number }, goldInvested: number,
 ): Unit {
   return {
@@ -50,7 +51,7 @@ export function createUnit(
     bonus: { ...bonus },
     cards: { damage: 0, attackSpeed: 0, range: 0, crit: 0 },
     goldInvested,
-    attackCooldown: 0, skillCooldown: 0, passiveTimer: 0, attackCount: 0,
+    attackCooldown: 0, skillCooldown: activeCooldown(cfg, classId, 1), passiveTimer: 0, attackCount: 0,
   };
 }
 
@@ -79,6 +80,7 @@ export function mergeUnits(cfg: GameConfig, a: Unit, b: Unit, newId: number): Un
     attackSpeed: Math.max(a.bonus.attackSpeed, b.bonus.attackSpeed),
   }, a.goldInvested + b.goldInvested);
   u.level = a.level + 1;
+  u.skillCooldown = activeCooldown(cfg, u.classId, u.level);
   for (const k of Object.keys(u.cards) as CardStat[]) u.cards[k] = a.cards[k] + b.cards[k];
   u.cards.range = Math.min(cap, u.cards.range);
   return u;

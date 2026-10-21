@@ -1,6 +1,7 @@
 import type { GameConfig, ModifierDef, WaveDef } from '../config';
 import type { Rng } from './rng';
 import { positionAt } from './path';
+import { damageEnemy } from './combat';
 import { newId } from './state';
 import type { Enemy, EnemyKind, GameState, ModifierId, Vec } from './types';
 
@@ -55,6 +56,23 @@ export function spawnEnemy(state: GameState, kind: EnemyKind): Enemy {
   return enemy;
 }
 
+const BURN_EVENT_INTERVAL = 0.5;
+
+/** Cháy: trừ máu mỗi tick nhưng chỉ phát event damage gộp mỗi 0.5s (và khi hết cháy / chết). */
+function tickBurn(state: GameState, e: Enemy, dt: number): void {
+  const b = e.burn!;
+  const step = Math.min(dt, b.remaining);
+  b.remaining -= step;
+  b.acc += damageEnemy(state, e, b.dps * step, false, false);
+  b.timer += step;
+  if (b.acc > 0 && (b.timer >= BURN_EVENT_INTERVAL - 1e-9 || b.remaining <= 0 || e.dead)) {
+    state.events.push({ type: 'damage', pos: enemyPos(state, e), amount: b.acc, crit: false });
+    b.acc = 0;
+    b.timer = 0;
+  }
+  if (b.remaining <= 0 || e.dead) e.burn = null;
+}
+
 export function updateEnemies(state: GameState, dt: number): void {
   state.waveTime += dt;
   while (state.spawnQueue.length > 0 && state.spawnQueue[0].at <= state.waveTime) {
@@ -64,6 +82,7 @@ export function updateEnemies(state: GameState, dt: number): void {
   const speedMult = modifierOf(state).speedMult;
   const remaining: Enemy[] = [];
   for (const e of state.enemies) {
+    if (!e.dead && e.burn) tickBurn(state, e, dt);
     if (!e.dead && e.blockedBy === null) e.distance += e.speed * speedMult * dt;
     if (!e.dead && e.distance >= state.pathLen) {
       state.hp = Math.max(0, state.hp - e.leakDamage);
