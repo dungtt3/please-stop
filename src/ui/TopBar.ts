@@ -10,7 +10,7 @@ export class TopBar {
   private timer: Phaser.GameObjects.Text;
   private speedBtn: Phaser.GameObjects.Text;
 
-  constructor(scene: Phaser.Scene, toggleSpeed: () => void) {
+  constructor(scene: Phaser.Scene, toggleSpeed: () => void, openMenu: () => void) {
     scene.add.rectangle(0, 0, GAME_W, TOP_BAR_H, COLORS.bar).setOrigin(0).setDepth(100);
     const mk = (x: number, size: number, color: string) =>
       scene.add.text(x, TOP_BAR_H / 2, '', { fontFamily: FONT, fontSize: `${size}px`, color }).setOrigin(0, 0.5).setDepth(101);
@@ -18,14 +18,21 @@ export class TopBar {
     this.gold = mk(130, 24, COLORS.gold);
     this.wave = mk(270, 24, COLORS.text);
     this.mod = mk(420, 16, COLORS.text);
-    this.mod.setWordWrapWidth(480);
-    this.timer = mk(920, 20, COLORS.text);
+    this.mod.setWordWrapWidth(440);
+    this.timer = mk(870, 18, COLORS.text);
     this.speedBtn = scene.add
       .text(GAME_W - 16, TOP_BAR_H / 2, '', {
         fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 6 },
       })
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
     this.speedBtn.on('pointerdown', toggleSpeed);
+    this.speedBtn.setText('Tốc độ ×1');
+    const gear = scene.add
+      .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', {
+        fontFamily: FONT, fontSize: '28px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 8 },
+      })
+      .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
+    gear.on('pointerdown', openMenu);
   }
 
   update(s: GameState, speed: 1 | 2): void {

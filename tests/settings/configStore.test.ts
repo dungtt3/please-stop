@@ -1,0 +1,114 @@
+import { describe, expect, test } from 'vitest';
+import { DEFAULT_CONFIG } from '../../src/config';
+import { createGame } from '../../src/sim/state';
+import {
+  STORAGE_KEY, exportConfig, importConfig, loadConfig, mergeConfig, resetConfig, saveConfig,
+} from '../../src/settings/configStore';
+import { labelFor } from '../../src/settings/labels';
+
+const mem = () => {
+  const m = new Map<string, string>();
+  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+};
+
+describe('configStore', () => {
+  test('chưa lưu gì → mặc định', () => expect(loadConfig(mem())).toEqual(DEFAULT_CONFIG));
+  test('lưu rồi tải lại giữ nguyên thay đổi', () => {
+    const st = mem(); const c = structuredClone(DEFAULT_CONFIG); c.economy.startGold = 500; c.enemies.tank.hp = 999;
+    saveConfig(st, c); expect(loadConfig(st)).toEqual(c);
+  });
+  test('resetConfig xóa bản lưu', () => {
+    const st = mem(); const c = structuredClone(DEFAULT_CONFIG); c.economy.startGold = 500;
+    saveConfig(st, c); resetConfig(st); expect(loadConfig(st)).toEqual(DEFAULT_CONFIG);
+  });
+  test('giá trị sai kiểu bị bỏ, giữ mặc định, báo lỗi theo đường dẫn', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { enemies: { tank: { hp: 'nhiều' } }, economy: { startGold: 300 } });
+    expect(r.config.enemies.tank.hp).toBe(DEFAULT_CONFIG.enemies.tank.hp);
+    expect(r.config.economy.startGold).toBe(300);
+    expect(r.errors).toContain('enemies.tank.hp: phải là số');
+  });
+  test('khóa lạ bị bỏ qua, khóa thiếu giữ mặc định', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { lạ: 1, economy: { zzz: 2 } });
+    expect(r.config).toEqual(DEFAULT_CONFIG); expect(r.errors).toEqual([]);
+  });
+  test('số âm bị từ chối (trừ luckStep)', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { economy: { startGold: -5, luckStep: [-1, 2, 3] } });
+    expect(r.config.economy.startGold).toBe(DEFAULT_CONFIG.economy.startGold);
+    expect(r.config.economy.luckStep).toEqual([-1, 2, 3]);
+    expect(r.errors).toEqual(['economy.startGold: không được âm']);
+  });
+  test('mảng độ dài cố định sai độ dài bị từ chối', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { levelDamage: [1, 2] });
+    expect(r.config.levelDamage).toEqual(DEFAULT_CONFIG.levelDamage); expect(r.errors).toHaveLength(1);
+  });
+  test('thêm wave mới được nhận; kind lạ bị từ chối', () => {
+    const waves = [...DEFAULT_CONFIG.waves, { groups: [{ kind: 'normal', count: 5, interval: 1, delay: 0 }] }];
+    expect(mergeConfig(DEFAULT_CONFIG, { waves }).config.waves).toHaveLength(16);
+    const bad = mergeConfig(DEFAULT_CONFIG, { waves: [{ groups: [{ kind: 'rồng', count: 1, interval: 1, delay: 0 }] }] });
+    expect(bad.errors.length).toBeGreaterThan(0);
+  });
+  test('op quiz lạ bị từ chối', () => {
+    const bands = [{ fromWave: 1, ops: ['%'], addMax: 5, mulMax: 0 }];
+    const r = mergeConfig(DEFAULT_CONFIG, { quiz: { bands } });
+    expect(r.errors.some((e) => e.startsWith('quiz.bands.0.ops.0'))).toBe(true);
+  });
+  test('ít wave hơn totalWaves → dùng lại cả waves lẫn totalWaves mặc định', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { waves: DEFAULT_CONFIG.waves.slice(0, 3), economy: { totalWaves: 10 } });
+    expect(r.config.waves).toEqual(DEFAULT_CONFIG.waves);
+    expect(r.config.economy.totalWaves).toBe(DEFAULT_CONFIG.economy.totalWaves);
+    expect(r.errors.length).toBeGreaterThan(0);
+  });
+  test('giảm bớt wave cùng totalWaves hợp lệ được nhận', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { waves: DEFAULT_CONFIG.waves.slice(0, 3), economy: { totalWaves: 3 } });
+    expect(r.config.waves).toHaveLength(3); expect(r.errors).toEqual([]);
+  });
+  test('map không hợp lệ bị từ chối', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { map: { path: [{ x: 0, y: 1 }, { x: 99, y: 1 }] } });
+    expect(r.config.map).toEqual(DEFAULT_CONFIG.map); expect(r.errors.length).toBeGreaterThan(0);
+  });
+  test('tổng trọng số độ hiếm bằng 0 bị từ chối', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { economy: { baseRarityWeights: [0, 0, 0] } });
+    expect(r.config.economy.baseRarityWeights).toEqual(DEFAULT_CONFIG.economy.baseRarityWeights);
+  });
+  test('JSON hỏng trong storage → mặc định', () => { const st = mem(); st.setItem(STORAGE_KEY, '{oops'); expect(loadConfig(st)).toEqual(DEFAULT_CONFIG); });
+  test('store ném lỗi → mặc định, không văng', () => {
+    const bad = { getItem: () => { throw new Error('x'); }, setItem: () => { throw new Error('x'); }, removeItem: () => { throw new Error('x'); } };
+    expect(loadConfig(bad)).toEqual(DEFAULT_CONFIG); expect(saveConfig(bad, DEFAULT_CONFIG)).toBe(false);
+  });
+  test('xuất rồi nhập ra đúng config', () => {
+    const c = structuredClone(DEFAULT_CONFIG); c.quiz.timeLimit = 6;
+    expect(importConfig(exportConfig(c))).toEqual({ config: c, errors: [] });
+  });
+  test('nhập file không phải JSON → mặc định kèm lỗi', () => {
+    expect(importConfig('xxx')).toEqual({ config: DEFAULT_CONFIG, errors: ['File không phải JSON hợp lệ'] });
+  });
+  test('ván mới dùng config truyền vào; sửa bản gốc không ảnh hưởng ván đang chạy', () => {
+    const c = structuredClone(DEFAULT_CONFIG); c.economy.startGold = 777;
+    const s = createGame(1, c); expect(s.gold).toBe(777);
+    c.economy.startGold = 1; expect(s.config.economy.startGold).toBe(777);
+  });
+});
+
+describe('labels', () => {
+  test('mọi khóa lá của DEFAULT_CONFIG có nhãn tiếng Việt', () => {
+    const missing: string[] = [];
+    const check = (path: string[]): void => {
+      if (labelFor(path.join('.')) === path[path.length - 1]) missing.push(path.join('.'));
+    };
+    const walk = (v: unknown, path: string[]): void => {
+      if (Array.isArray(v)) {
+        if (v.every((x) => typeof x !== 'object')) check(path);
+        else v.forEach((x) => walk(x, path));
+      } else if (v && typeof v === 'object') {
+        for (const [k, x] of Object.entries(v)) walk(x, [...path, k]);
+      } else check(path);
+    };
+    walk(DEFAULT_CONFIG, []);
+    expect(missing).toEqual([]);
+  });
+  test('labelFor bỏ chỉ số và rơi về khóa cuối', () => {
+    expect(labelFor('enemies.tank.hp')).toBe('Máu');
+    expect(labelFor('waves.3.groups.1.count')).toBe(labelFor('waves.groups.count'));
+    expect(labelFor('foo.bar')).toBe('bar');
+  });
+});

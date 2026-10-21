@@ -14,6 +14,8 @@ import { UnitPanel } from '../ui/UnitPanel';
 import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
 import { Banner, Toast } from '../ui/Toast';
+import { openConfigMenu } from '../ui/ConfigMenu';
+import { browserStore, loadConfig, resetConfig, saveConfig } from '../settings/configStore';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 
 const DRAG_THRESHOLD = 8;
@@ -37,6 +39,7 @@ export class GameScene extends Phaser.Scene {
   private banner!: Banner;
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
+  private menuOpen = false;
   private drag: { slot: number; startX: number; startY: number; x: number; y: number; moving: boolean } | null = null;
 
   constructor() {
@@ -44,12 +47,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.state = createGame(Date.now());
+    this.state = createGame(Date.now(), loadConfig(browserStore()));
     this.board = this.add.graphics().setDepth(0);
     this.dyn = this.add.graphics().setDepth(10);
-    this.topBar = new TopBar(this, () => {
-      this.speed = this.speed === 1 ? 2 : 1;
-    });
+    this.topBar = new TopBar(
+      this,
+      () => {
+        this.speed = this.speed === 1 ? 2 : 1;
+      },
+      () => this.openMenu(),
+    );
     this.layout();
     this.drawBoard();
 
@@ -72,7 +79,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
   restart(): void {
-    this.state = createGame(Date.now());
+    this.state = createGame(Date.now(), loadConfig(browserStore()));
     this.selectedUnitId = null;
     this.drag = null;
     this.speed = 1;
@@ -82,6 +89,25 @@ export class GameScene extends Phaser.Scene {
     this.dyn.clear();
     this.layout();
     this.drawBoard();
+  }
+
+  /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
+  private openMenu(): void {
+    if (this.menuOpen) return;
+    this.menuOpen = true;
+    this.drag = null;
+    openConfigMenu({
+      current: loadConfig(browserStore()),
+      onSave: (cfg) => saveConfig(browserStore(), cfg),
+      onApplyAndRestart: (cfg) => {
+        saveConfig(browserStore(), cfg);
+        this.restart();
+      },
+      onReset: () => resetConfig(browserStore()),
+      onClose: () => {
+        this.menuOpen = false;
+      },
+    });
   }
 
   toScreen(v: Vec): { x: number; y: number } {
@@ -138,7 +164,7 @@ export class GameScene extends Phaser.Scene {
   /** Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. */
   private uiOwns(p: Phaser.Input.Pointer): boolean {
     return (
-      p.y < TOP_BAR_H || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
+      this.menuOpen || p.y < TOP_BAR_H || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
       this.quizModal.open || this.resultScreen.open || this.hand.busy
     );
   }
@@ -180,7 +206,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_: number, delta: number): void {
     const s = this.state;
-    tick(s, Math.min(delta / 1000, 0.25) * this.speed);
+    if (!this.menuOpen) tick(s, Math.min(delta / 1000, 0.25) * this.speed);
     this.render();
     this.topBar.update(s, this.speed);
     this.bottomBar.update(s);
