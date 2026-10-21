@@ -1,13 +1,19 @@
 import Phaser from 'phaser';
 import { createGame } from '../sim/state';
-import { tick, startWave } from '../sim/game';
-import { summon, dragUnit } from '../sim/commands';
+import { tick } from '../sim/game';
+import { dragUnit } from '../sim/commands';
 import { canMerge, computeStats } from '../sim/units';
 import { unitPos } from '../sim/combat';
-import { enemyPos } from '../sim/enemies';
+import { enemyPos, modifierOf } from '../sim/enemies';
 import { pathTiles, tileCenter } from '../sim/path';
-import type { GameEvent, GameState, Unit, Vec } from '../sim/types';
+import type { CommandResult, GameEvent, GameState, Unit, Vec } from '../sim/types';
 import { TopBar } from '../ui/TopBar';
+import { BottomBar } from '../ui/BottomBar';
+import { Hand } from '../ui/Hand';
+import { UnitPanel } from '../ui/UnitPanel';
+import { QuizModal } from '../ui/QuizModal';
+import { ResultScreen } from '../ui/ResultScreen';
+import { Banner, Toast } from '../ui/Toast';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 
 const DRAG_THRESHOLD = 8;
@@ -22,6 +28,13 @@ export class GameScene extends Phaser.Scene {
   private board!: Phaser.GameObjects.Graphics;
   private dyn!: Phaser.GameObjects.Graphics;
   private topBar!: TopBar;
+  private bottomBar!: BottomBar;
+  private hand!: Hand;
+  private unitPanel!: UnitPanel;
+  private quizModal!: QuizModal;
+  private resultScreen!: ResultScreen;
+  private toast!: Toast;
+  private banner!: Banner;
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private drag: { slot: number; startX: number; startY: number; x: number; y: number; moving: boolean } | null = null;
@@ -40,11 +53,21 @@ export class GameScene extends Phaser.Scene {
     this.layout();
     this.drawBoard();
 
+    const getState = () => this.state;
+    const act = (r: CommandResult) => this.toast.result(r);
+    this.toast = new Toast(this);
+    this.banner = new Banner(this);
+    this.bottomBar = new BottomBar(this, getState, act);
+    this.hand = new Hand(this, getState, act, (x, y) => this.slotAt(x, y));
+    this.unitPanel = new UnitPanel(this, getState, act, () => {
+      this.selectedUnitId = null;
+    });
+    this.quizModal = new QuizModal(this, getState, act);
+    this.resultScreen = new ResultScreen(this, () => this.restart());
+
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onUp(p));
-    this.input.keyboard?.on('keydown-S', () => summon(this.state)); // TẠM: Task 11 xóa
-    this.input.keyboard?.on('keydown-W', () => startWave(this.state)); // TẠM
   }
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
@@ -53,6 +76,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedUnitId = null;
     this.drag = null;
     this.speed = 1;
+    this.hand.reset();
     for (const t of this.starTexts.values()) t.destroy();
     this.starTexts.clear();
     this.dyn.clear();
@@ -104,15 +128,29 @@ export class GameScene extends Phaser.Scene {
     label(last, 'Ra');
   }
 
-  private slotAt(x: number, y: number): number {
+  slotAt(x: number, y: number): number {
     const t = this.tileSize;
     const tx = Math.floor((x - this.originX) / t);
     const ty = Math.floor((y - this.originY) / t);
     return this.state.map.slots.findIndex((s) => s.x === tx && s.y === ty);
   }
 
+  /** Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. */
+  private uiOwns(p: Phaser.Input.Pointer): boolean {
+    return (
+      p.y < TOP_BAR_H || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
+      this.quizModal.open || this.resultScreen.open || this.hand.busy
+    );
+  }
+
   private onDown(p: Phaser.Input.Pointer): void {
+    if (this.uiOwns(p)) return;
     const slot = this.slotAt(p.x, p.y);
+    if (this.hand.selectedId !== null && slot >= 0 && this.state.slots[slot] !== null) {
+      const uid = this.state.slots[slot];
+      if (this.hand.applyTo(this.hand.selectedId, slot)) this.selectedUnitId = uid;
+      return;
+    }
     if (slot < 0 || this.state.slots[slot] === null) {
       this.selectedUnitId = null;
       return;
@@ -145,6 +183,11 @@ export class GameScene extends Phaser.Scene {
     tick(s, Math.min(delta / 1000, 0.25) * this.speed);
     this.render();
     this.topBar.update(s, this.speed);
+    this.bottomBar.update(s);
+    this.hand.update(s);
+    this.unitPanel.update(s, this.selectedUnitId);
+    this.quizModal.update(s);
+    this.resultScreen.update(s);
     for (const e of s.events) this.handleEvent(e);
     s.events.length = 0;
   }
@@ -196,7 +239,7 @@ export class GameScene extends Phaser.Scene {
     const sel = this.selectedUnitId !== null ? s.units.get(this.selectedUnitId) : undefined;
     if (sel) {
       const c = this.unitScreen(sel);
-      const range = computeStats(s.config, sel, 1).range;
+      const range = computeStats(s.config, sel, modifierOf(s).rangeMult).range;
       g.fillStyle(0xffffff, 0.06).fillCircle(c.x, c.y, range * t);
       g.lineStyle(2, 0xffffff, 0.8).strokeCircle(c.x, c.y, range * t);
     } else if (this.selectedUnitId !== null) {
@@ -249,6 +292,21 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: ring, scale: 3, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
         break;
       }
+      case 'cardGranted':
+        this.hand.flash(e.card.id);
+        break;
+      case 'cardConverted':
+        this.toast.show(`Tay bài đầy: +${e.gold} vàng`);
+        break;
+      case 'waveStart': {
+        const m = this.state.modifier ? this.state.config.modifiers[this.state.modifier].name : '';
+        this.banner.show(m ? `Wave ${e.wave}
+${m}` : `Wave ${e.wave}`);
+        break;
+      }
+      case 'waveEnd':
+        this.banner.show(`+${e.reward} vàng`, COLORS.gold);
+        break;
       case 'leak':
         this.cameras.main.shake(150, 0.004);
         break;

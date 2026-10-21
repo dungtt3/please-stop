@@ -1,4 +1,4 @@
-import type { Rarity } from '../sim/types';
+import type { CardStat, Rarity } from '../sim/types';
 
 export const GAME_W = 1280;
 export const GAME_H = 720;
@@ -36,3 +36,19 @@ export const RARITY_NAME: Record<Rarity, string> = {
   rare: 'Hiếm',
   epic: 'Sử thi',
 };
+
+export const CARD_STAT_NAME: Record<CardStat, string> = {
+  damage: 'Sát thương',
+  attackSpeed: 'Tốc đánh',
+  range: 'Tầm đánh',
+  crit: 'Chí mạng',
+};
+
+/** "+20%" cho damage/attackSpeed/crit, "+0.5" cho range. */
+export function fmtCardValue(stat: CardStat, v: number): string {
+  return stat === 'range' ? `+${Math.round(v * 100) / 100}` : `+${Math.round(v * 100)}%`;
+}
+
+export function cardLabel(stat: CardStat, v: number): string {
+  return `${fmtCardValue(stat, v)} ${CARD_STAT_NAME[stat]}`;
+}
