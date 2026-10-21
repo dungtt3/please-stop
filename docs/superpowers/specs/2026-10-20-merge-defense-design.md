@@ -159,7 +159,7 @@ Mục tiêu mặc định: quái **đi xa nhất** trong tầm.
 | Thường | trung bình | trung bình | 1 | Đánh lính khi bị chặn (mọi quái thường đều có sát thương đánh lính) |
 | Nhanh | thấp | cao | 1 | |
 | Trâu | cao | thấp | 2 | Giáp: giảm 30% sát thương nhận |
-| Boss (wave 10, wave 15) | rất cao | thấp | 10 | Miễn nhiễm đóng băng, chỉ bị chậm một nửa |
+| Boss (wave 10, wave 15) | rất cao | thấp | 10 | Không bị lính chặn, giẫm chết lính |
 
 Máu quái tăng theo wave (gợi ý ×1.15 mỗi wave). Mỗi quái chết cho vàng (Thường 3, Nhanh 3,
 Trâu 6, Boss 50).
