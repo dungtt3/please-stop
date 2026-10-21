@@ -3,6 +3,7 @@ import type { Rng } from './rng';
 import { positionAt } from './path';
 import { damageEnemy } from './combat';
 import { newId } from './state';
+import { removeMinion } from './minions';
 import type { Enemy, EnemyKind, GameState, ModifierId, Vec } from './types';
 
 const NEUTRAL: ModifierDef = {
@@ -73,6 +74,21 @@ function tickBurn(state: GameState, e: Enemy, dt: number): void {
   if (b.remaining <= 0 || e.dead) e.burn = null;
 }
 
+/** Di chuyển một bước; lính chặn quái thường, boss giẫm chết lính. */
+function advance(state: GameState, e: Enemy, step: number): void {
+  const next = e.distance + step;
+  const ahead = state.minions.filter((m) => m.pathDistance >= e.distance && m.pathDistance < next);
+  if (e.kind === 'boss') {
+    for (const m of ahead) removeMinion(state, m.id);
+    e.distance = next;
+    return;
+  }
+  if (ahead.length === 0) { e.distance = next; return; }
+  const nearest = ahead.reduce((a, b) => (b.pathDistance < a.pathDistance ? b : a));
+  e.distance = nearest.pathDistance;
+  e.blockedBy = nearest.id;
+}
+
 export function updateEnemies(state: GameState, dt: number): void {
   state.waveTime += dt;
   while (state.spawnQueue.length > 0 && state.spawnQueue[0].at <= state.waveTime) {
@@ -83,7 +99,7 @@ export function updateEnemies(state: GameState, dt: number): void {
   const remaining: Enemy[] = [];
   for (const e of state.enemies) {
     if (!e.dead && e.burn) tickBurn(state, e, dt);
-    if (!e.dead && e.blockedBy === null) e.distance += e.speed * speedMult * dt;
+    if (!e.dead && e.blockedBy === null) advance(state, e, e.speed * speedMult * dt);
     if (!e.dead && e.distance >= state.pathLen) {
       state.hp = Math.max(0, state.hp - e.leakDamage);
       state.events.push({ type: 'leak', amount: e.leakDamage });

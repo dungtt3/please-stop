@@ -40,7 +40,10 @@ export interface SkillsConfig {
     splashRadius: number; burnRatio: number; burnDuration: number;
     meteorMult: number; meteorRadius: number; cooldown: number;
   };
-  summoner: { cooldown: number };
+  summoner: {
+    passiveEvery: number; waveCount: number; maxMinions: number; minionLifetime: number;
+    minionDamageRatio: number; minionHpPerLevel: number; minionAttackRate: number; cooldown: number;
+  };
 }
 
 export const SKILLS: SkillsConfig = {
@@ -50,7 +53,10 @@ export const SKILLS: SkillsConfig = {
     splashRadius: 0.75, burnRatio: 0.3, burnDuration: 3,
     meteorMult: 5, meteorRadius: 1.5, cooldown: 12,
   },
-  summoner: { cooldown: 14 },
+  summoner: {
+    passiveEvery: 6, waveCount: 3, maxMinions: 4, minionLifetime: 10,
+    minionDamageRatio: 0.5, minionHpPerLevel: 40, minionAttackRate: 1, cooldown: 14,
+  },
 };
 
 /** Mỗi cấp giảm 8% hồi chiêu skill chủ động. */

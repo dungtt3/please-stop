@@ -3,6 +3,7 @@ import {
   rollRandomBonus, rollRarity, summonCost,
 } from './units';
 import { newId } from './state';
+import { removeMinionsOf } from './minions';
 import type { Card, CardStat, ClassId, CommandResult, GameState, Rarity } from './types';
 
 const OK: CommandResult = { ok: true };
@@ -47,7 +48,8 @@ export function dragUnit(s: GameState, from: number, to: number): CommandResult 
     const merged = mergeUnits(s.config, a, b, newId(s));
     s.units.delete(a.id);
     s.units.delete(b.id);
-    s.minions = s.minions.filter((m) => m.ownerId !== a.id && m.ownerId !== b.id);
+    removeMinionsOf(s, a.id);
+    removeMinionsOf(s, b.id);
     s.units.set(merged.id, merged);
     s.slots[to] = merged.id;
     s.slots[from] = null;
@@ -68,7 +70,7 @@ export function sellUnit(s: GameState, slot: number): CommandResult {
   s.gold += Math.floor(s.units.get(id)!.goldInvested / 2);
   s.units.delete(id);
   s.slots[slot] = null;
-  s.minions = s.minions.filter((m) => m.ownerId !== id);
+  removeMinionsOf(s, id);
   return OK;
 }
 

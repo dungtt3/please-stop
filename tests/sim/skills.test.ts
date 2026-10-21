@@ -118,13 +118,14 @@ test('skill chờ khi không có quái và bắn ngay khi quái vào tầm', () 
   expect(lost(e)).toBeCloseTo(60);
   expect(u.skillCooldown).toBe(8);
 });
-test('Triệu hồi sư: skill chưa làm gì và không tiêu cooldown; đòn thường một phát', () => {
+test('Triệu hồi sư: skill gọi lính và tiêu cooldown; đòn thường một phát', () => {
   const { s, u } = setup('summoner');
   const e = enemyAt(s, 3);
   u.skillCooldown = 0;
   updateActive(s, u, computeStats(cfg, u), 1);
-  expect(u.skillCooldown).toBe(0);
-  expect(s.events.some((x) => x.type === 'skill')).toBe(false);
+  expect(s.minions).toHaveLength(3);
+  expect(u.skillCooldown).toBe(14);
+  expect(s.events.some((x) => x.type === 'skill')).toBe(true);
   basicAttack(s, u, computeStats(cfg, u), e);
   expect(lost(e)).toBeCloseTo(6);
 });

@@ -1,6 +1,7 @@
 import type { GameConfig } from '../config';
 import { damageEnemy, enemiesInRange, rollHit, unitPos } from './combat';
 import { enemyPos } from './enemies';
+import { spawnMinion } from './minions';
 import type { ClassId, Enemy, GameState, Unit, UnitStats, Vec } from './types';
 
 /** Hồi chiêu skill chủ động: cooldown × (1 − giảm × (cấp − 1)). */
@@ -42,6 +43,13 @@ export function basicAttack(state: GameState, unit: Unit, stats: UnitStats, targ
 
 /** Skill chủ động: đếm hồi chiêu; chỉ kích hoạt khi có mục tiêu hợp lệ, nếu không chờ ở 0. */
 export function updateActive(state: GameState, unit: Unit, stats: UnitStats, dt: number): void {
+  if (unit.classId === 'summoner' && state.phase === 'wave') {
+    unit.passiveTimer += dt;
+    if (unit.passiveTimer >= state.config.skills.summoner.passiveEvery) {
+      spawnMinion(state, unit, stats);
+      unit.passiveTimer = 0;
+    }
+  }
   unit.skillCooldown -= dt;
   if (unit.skillCooldown > 0) return;
   unit.skillCooldown = 0;
@@ -80,8 +88,12 @@ export function updateActive(state: GameState, unit: Unit, stats: UnitStats, dt:
       at = best;
       break;
     }
-    default:
-      return; // Triệu hồi sư: Task 7
+    default: {
+      let spawned = 0;
+      for (let i = 0; i < cfg.skills.summoner.waveCount; i++) if (spawnMinion(state, unit, stats)) spawned++;
+      if (spawned === 0) return;
+      at = pos;
+    }
   }
   state.events.push({ type: 'skill', unitId: unit.id, skill: unit.classId, pos: at });
   unit.skillCooldown = activeCooldown(cfg, unit.classId, unit.level);
