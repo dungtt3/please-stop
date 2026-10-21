@@ -31,6 +31,31 @@ export const isFixedArray = (path: string): boolean => FIXED_ARRAYS.some((re) =>
 const join = (path: string, key: string | number): string => (path ? `${path}.${key}` : String(key));
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const seg = '[^.]+';
+const rx = (...ps: string[]): RegExp[] => ps.map((p) => new RegExp(`^${p.replace(/\*/g, seg).replace(/\./g, '\.')}$`));
+
+/** Phải > 0 (chia cho nó, hoặc là nhịp/tốc độ/thời gian làm game đứng nếu bằng 0). */
+const POSITIVE = rx(
+  'enemies.*.speed', 'enemies.*.hp', 'enemyScaling.hpGrowth', 'classes.*.base.attackSpeed', 'classes.*.base.range',
+  'quiz.timeLimit', 'waves.groups.interval', 'skills.summoner.minionAttackRate', 'skills.summoner.passiveEvery',
+  'skills.*.cooldown', 'economy.attackSpeedPerLevel', 'economy.luckCost.base',
+);
+/** Số nguyên >= 1. */
+const INT_MIN1 = rx(
+  'waves.groups.count', 'economy.handLimit', 'economy.maxLevel', 'economy.totalWaves', 'skills.summoner.waveCount',
+  'skills.swordsman.comboEvery', 'skills.archer.rainArrows', 'map.cols', 'map.rows',
+);
+/** Số nguyên >= 0 (0 có nghĩa: tắt). */
+const INT_MIN0 = rx('economy.maxLuck', 'skills.summoner.maxMinions', 'economy.rangeCardCap');
+
+function numberRuleError(path: string, n: number): string | null {
+  const np = stripIndices(path);
+  if (POSITIVE.some((r) => r.test(np)) && !(n > 0)) return `${path}: phải lớn hơn 0`;
+  if (INT_MIN1.some((r) => r.test(np)) && !(Number.isInteger(n) && n >= 1)) return `${path}: phải là số nguyên ≥ 1`;
+  if (INT_MIN0.some((r) => r.test(np)) && !(Number.isInteger(n) && n >= 0)) return `${path}: phải là số nguyên ≥ 0`;
+  return null;
+}
+
 function mergeNode(base: unknown, input: unknown, path: string, errors: string[]): unknown {
   if (typeof base === 'number') {
     if (typeof input !== 'number' || !Number.isFinite(input)) {
@@ -39,6 +64,11 @@ function mergeNode(base: unknown, input: unknown, path: string, errors: string[]
     }
     if (input < 0 && stripIndices(path) !== 'economy.luckStep') {
       errors.push(`${path}: không được âm`);
+      return base;
+    }
+    const rule = numberRuleError(path, input);
+    if (rule) {
+      errors.push(rule);
       return base;
     }
     return input;
@@ -110,6 +140,21 @@ export function mergeConfig(base: GameConfig, input: unknown): { config: GameCon
     );
     cfg.waves = structuredClone(base.waves);
     cfg.economy.totalWaves = base.economy.totalWaves;
+  }
+  if (cfg.economy.maxLevel > cfg.levelDamage.length) {
+    errors.push(`economy.maxLevel: không được lớn hơn số phần tử levelDamage (${cfg.levelDamage.length})`);
+    cfg.economy.maxLevel = base.economy.maxLevel;
+  }
+  const bands = cfg.quiz.bands;
+  const bandIssues: string[] = [];
+  if (bands.length < 1) bandIssues.push('quiz.bands: phải có ít nhất 1 mốc');
+  bands.forEach((b, i) => {
+    if (b.ops.length < 1) bandIssues.push(`quiz.bands.${i}.ops: phải có ít nhất 1 phép tính`);
+    if ((b.ops.includes('*') || b.ops.includes('/')) && b.mulMax < 2) bandIssues.push(`quiz.bands.${i}.mulMax: phải ≥ 2 khi dùng phép × hoặc ÷`);
+  });
+  if (bandIssues.length) {
+    errors.push(...bandIssues);
+    cfg.quiz.bands = structuredClone(base.quiz.bands);
   }
   const mapErrors = validateMap(cfg.map);
   if (mapErrors.length) {

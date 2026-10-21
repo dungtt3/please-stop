@@ -89,6 +89,52 @@ describe('configStore', () => {
   });
 });
 
+describe('ràng buộc chống crash', () => {
+  const band = (o: object) => ({ fromWave: 1, ops: ['+'], addMax: 5, mulMax: 0, ...o });
+  const bandsFallback = (bands: unknown[]) => {
+    const r = mergeConfig(DEFAULT_CONFIG, { quiz: { bands } });
+    expect(r.config.quiz.bands).toEqual(DEFAULT_CONFIG.quiz.bands);
+    expect(r.errors.length).toBeGreaterThan(0);
+  };
+  test('bands rỗng bị từ chối', () => bandsFallback([]));
+  test('ops rỗng bị từ chối', () => bandsFallback([band({ ops: [] })]));
+  test('× hoặc ÷ với mulMax < 2 bị từ chối', () => {
+    bandsFallback([band({ ops: ['*'], mulMax: 1 })]);
+    bandsFallback([band({ ops: ['+', '/'], mulMax: 0 })]);
+  });
+  test('band hợp lệ được nhận', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { quiz: { bands: [band({ ops: ['*'], mulMax: 2 })] } });
+    expect(r.errors).toEqual([]); expect(r.config.quiz.bands).toHaveLength(1);
+  });
+  test.each([
+    ['enemies.tank.speed', { enemies: { tank: { speed: 0 } } }, 'phải lớn hơn 0'],
+    ['classes.mage.base.attackSpeed', { classes: { mage: { base: { attackSpeed: 0 } } } }, 'phải lớn hơn 0'],
+    ['quiz.timeLimit', { quiz: { timeLimit: 0 } }, 'phải lớn hơn 0'],
+    ['skills.summoner.minionAttackRate', { skills: { summoner: { minionAttackRate: 0 } } }, 'phải lớn hơn 0'],
+    ['economy.handLimit', { economy: { handLimit: 0 } }, 'phải là số nguyên ≥ 1'],
+    ['economy.totalWaves', { economy: { totalWaves: 2.5 } }, 'phải là số nguyên ≥ 1'],
+    ['economy.maxLuck', { economy: { maxLuck: 1.5 } }, 'phải là số nguyên ≥ 0'],
+  ])('%s sai bị từ chối', (path, input, msg) => {
+    const r = mergeConfig(DEFAULT_CONFIG, input);
+    expect(r.errors).toContain(`${path}: ${msg}`);
+    expect(r.config).toEqual(DEFAULT_CONFIG);
+  });
+  test('wave group interval 0 và count 0 / lẻ bị từ chối', () => {
+    const w = (g: object) => ({ waves: [{ groups: [{ kind: 'normal', count: 3, interval: 1, delay: 0, ...g }] }].concat(DEFAULT_CONFIG.waves.slice(1) as never) });
+    expect(mergeConfig(DEFAULT_CONFIG, w({ interval: 0 })).errors).toContain('waves.0.groups.0.interval: phải lớn hơn 0');
+    expect(mergeConfig(DEFAULT_CONFIG, w({ count: 0 })).errors).toContain('waves.0.groups.0.count: phải là số nguyên ≥ 1');
+    expect(mergeConfig(DEFAULT_CONFIG, w({ count: 1.5 })).errors.length).toBe(1);
+  });
+  test('maxLevel > số phần tử levelDamage bị từ chối', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { economy: { maxLevel: 6 } });
+    expect(r.config.economy.maxLevel).toBe(DEFAULT_CONFIG.economy.maxLevel); expect(r.errors.length).toBe(1);
+  });
+  test('maxMinions = 0 được phép (tắt lính)', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { skills: { summoner: { maxMinions: 0 } } });
+    expect(r.errors).toEqual([]);
+  });
+});
+
 describe('labels', () => {
   test('mọi khóa lá của DEFAULT_CONFIG có nhãn tiếng Việt', () => {
     const missing: string[] = [];
