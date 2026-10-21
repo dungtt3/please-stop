@@ -34,15 +34,19 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v ===
 const seg = '[^.]+';
 const rx = (...ps: string[]): RegExp[] => ps.map((p) => new RegExp(`^${p.replace(/\*/g, seg).replace(/\./g, '\.')}$`));
 
+/** Hand UI chỉ có 5 ô thẻ. */
+const MAX_HAND_LIMIT = 5;
+
 /** Phải > 0 (chia cho nó, hoặc là nhịp/tốc độ/thời gian làm game đứng nếu bằng 0). */
 const POSITIVE = rx(
   'enemies.*.speed', 'enemies.*.hp', 'enemyScaling.hpGrowth', 'classes.*.base.attackSpeed', 'classes.*.base.range',
   'quiz.timeLimit', 'waves.groups.interval', 'skills.summoner.minionAttackRate', 'skills.summoner.passiveEvery',
   'skills.*.cooldown', 'economy.attackSpeedPerLevel', 'economy.luckCost.base',
+  'modifiers.*.speedMult', 'modifiers.*.damageTakenMult',
 );
 /** Số nguyên >= 1. */
 const INT_MIN1 = rx(
-  'waves.groups.count', 'economy.handLimit', 'economy.maxLevel', 'economy.totalWaves', 'skills.summoner.waveCount',
+  'waves.groups.count', 'economy.startHp', 'economy.handLimit', 'economy.maxLevel', 'economy.totalWaves', 'skills.summoner.waveCount',
   'skills.swordsman.comboEvery', 'skills.archer.rainArrows', 'map.cols', 'map.rows',
 );
 /** Số nguyên >= 0 (0 có nghĩa: tắt). */
@@ -53,6 +57,8 @@ function numberRuleError(path: string, n: number): string | null {
   if (POSITIVE.some((r) => r.test(np)) && !(n > 0)) return `${path}: phải lớn hơn 0`;
   if (INT_MIN1.some((r) => r.test(np)) && !(Number.isInteger(n) && n >= 1)) return `${path}: phải là số nguyên ≥ 1`;
   if (INT_MIN0.some((r) => r.test(np)) && !(Number.isInteger(n) && n >= 0)) return `${path}: phải là số nguyên ≥ 0`;
+  if (np === 'economy.handLimit' && n > MAX_HAND_LIMIT) return `${path}: phải là số nguyên từ 1 đến ${MAX_HAND_LIMIT}`;
+  if (/^enemies\.[^.]+\.armor$/.test(np) && !(n >= 0 && n < 1)) return `${path}: phải trong khoảng [0, 1)`;
   return null;
 }
 
@@ -145,6 +151,10 @@ export function mergeConfig(base: GameConfig, input: unknown): { config: GameCon
     errors.push(`economy.maxLevel: không được lớn hơn số phần tử levelDamage (${cfg.levelDamage.length})`);
     cfg.economy.maxLevel = base.economy.maxLevel;
   }
+  if (cfg.skillCooldownPerLevel * (cfg.economy.maxLevel - 1) >= 1) {
+    errors.push('skillCooldownPerLevel: × (economy.maxLevel − 1) phải nhỏ hơn 1 (hồi chiêu không được về 0)');
+    cfg.skillCooldownPerLevel = base.skillCooldownPerLevel;
+  }
   const bands = cfg.quiz.bands;
   const bandIssues: string[] = [];
   if (bands.length < 1) bandIssues.push('quiz.bands: phải có ít nhất 1 mốc');
@@ -206,12 +216,12 @@ export function browserStore(): KeyValueStore | null {
 
 export const exportConfig = (cfg: GameConfig): string => JSON.stringify(cfg, null, 2);
 
-export function importConfig(text: string): { config: GameConfig; errors: string[] } {
+export function importConfig(text: string, base: GameConfig = DEFAULT_CONFIG): { config: GameConfig; errors: string[] } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { config: structuredClone(DEFAULT_CONFIG), errors: ['File không phải JSON hợp lệ'] };
+    return { config: structuredClone(base), errors: ['File không phải JSON hợp lệ'] };
   }
-  return mergeConfig(DEFAULT_CONFIG, parsed);
+  return mergeConfig(base, parsed);
 }

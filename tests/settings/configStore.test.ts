@@ -4,6 +4,7 @@ import { createGame } from '../../src/sim/state';
 import {
   STORAGE_KEY, exportConfig, importConfig, loadConfig, mergeConfig, resetConfig, saveConfig,
 } from '../../src/settings/configStore';
+import { activeCooldown } from '../../src/sim/skills';
 import { labelFor } from '../../src/settings/labels';
 
 const mem = () => {
@@ -132,6 +133,44 @@ describe('ràng buộc chống crash', () => {
   test('maxMinions = 0 được phép (tắt lính)', () => {
     const r = mergeConfig(DEFAULT_CONFIG, { skills: { summoner: { maxMinions: 0 } } });
     expect(r.errors).toEqual([]);
+  });
+});
+
+describe('ràng buộc bổ sung (final review)', () => {
+  test.each([
+    ['modifiers.frenzy.speedMult', { modifiers: { frenzy: { speedMult: 0 } } }, 'phải lớn hơn 0'],
+    ['modifiers.ironArmor.damageTakenMult', { modifiers: { ironArmor: { damageTakenMult: 0 } } }, 'phải lớn hơn 0'],
+    ['enemies.tank.armor', { enemies: { tank: { armor: 1 } } }, 'phải trong khoảng [0, 1)'],
+    ['enemies.tank.armor', { enemies: { tank: { armor: 1.5 } } }, 'phải trong khoảng [0, 1)'],
+    ['economy.startHp', { economy: { startHp: 0 } }, 'phải là số nguyên ≥ 1'],
+    ['economy.startHp', { economy: { startHp: 2.5 } }, 'phải là số nguyên ≥ 1'],
+    ['economy.handLimit', { economy: { handLimit: 6 } }, 'phải là số nguyên từ 1 đến 5'],
+  ])('%s sai bị từ chối', (path, input, msg) => {
+    const r = mergeConfig(DEFAULT_CONFIG, input);
+    expect(r.errors).toContain(`${path}: ${msg}`);
+    expect(r.config).toEqual(DEFAULT_CONFIG);
+  });
+  test('armor 0.99 và handLimit 5 hợp lệ', () => {
+    expect(mergeConfig(DEFAULT_CONFIG, { enemies: { tank: { armor: 0.99 } }, economy: { handLimit: 5 } }).errors).toEqual([]);
+  });
+  test('skillCooldownPerLevel × (maxLevel − 1) ≥ 1 bị từ chối', () => {
+    const r = mergeConfig(DEFAULT_CONFIG, { skillCooldownPerLevel: 0.3 });
+    expect(r.config.skillCooldownPerLevel).toBe(DEFAULT_CONFIG.skillCooldownPerLevel);
+    expect(r.errors.length).toBe(1);
+  });
+  test('activeCooldown có sàn an toàn', () => {
+    const c = structuredClone(DEFAULT_CONFIG); c.skillCooldownPerLevel = 0.5;
+    expect(activeCooldown(c, 'swordsman', 5)).toBeGreaterThanOrEqual(0.5);
+  });
+  test('importConfig giữ giá trị của base cho trường thiếu/sai', () => {
+    const base = structuredClone(DEFAULT_CONFIG); base.quiz.timeLimit = 7; base.economy.startGold = 321;
+    const r = importConfig(JSON.stringify({ economy: { startHp: 0, prepSeconds: 33 } }), base);
+    expect(r.config.quiz.timeLimit).toBe(7);
+    expect(r.config.economy.startGold).toBe(321);
+    expect(r.config.economy.startHp).toBe(base.economy.startHp);
+    expect(r.config.economy.prepSeconds).toBe(33);
+    expect(r.errors.length).toBe(1);
+    expect(importConfig('xxx', base).config).toEqual(base);
   });
 });
 

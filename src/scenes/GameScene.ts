@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { GameConfig } from '../config';
 import { createGame } from '../sim/state';
 import { tick } from '../sim/game';
 import { dragUnit } from '../sim/commands';
@@ -75,11 +76,14 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onUp(p));
+    this.input.on('pointerupoutside', () => {
+      this.drag = null;
+    });
   }
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
-  restart(): void {
-    this.state = createGame(Date.now(), loadConfig(browserStore()));
+  restart(cfg?: GameConfig): void {
+    this.state = createGame(Date.now(), cfg ?? loadConfig(browserStore()));
     this.selectedUnitId = null;
     this.drag = null;
     this.speed = 1;
@@ -100,8 +104,9 @@ export class GameScene extends Phaser.Scene {
       current: loadConfig(browserStore()),
       onSave: (cfg) => saveConfig(browserStore(), cfg),
       onApplyAndRestart: (cfg) => {
-        saveConfig(browserStore(), cfg);
-        this.restart();
+        const saved = saveConfig(browserStore(), cfg);
+        this.restart(cfg);
+        if (!saved) this.toast.show('Không lưu được cấu hình — chỉ áp dụng cho ván này');
       },
       onReset: () => resetConfig(browserStore()),
       onClose: () => {

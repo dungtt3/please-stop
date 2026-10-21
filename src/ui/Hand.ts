@@ -49,7 +49,7 @@ export class Hand {
       });
       this.slots.push(slot);
     }
-    this.discardBtn = new Button(scene, 0, 0, 56, 40, 'Bỏ', () => {
+    this.discardBtn = new Button(scene, 0, 0, 56, 56, 'Bỏ', () => {
       if (this.selectedId !== null) {
         this.act(discardCard(this.getState(), this.selectedId));
         this.selectedId = null;
@@ -59,6 +59,7 @@ export class Hand {
 
     scene.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
     scene.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onUp(p));
+    scene.input.on('pointerupoutside', () => this.cancelPress());
   }
 
   /** Hand đang giữ con trỏ (kéo thẻ). */
@@ -112,6 +113,12 @@ export class Hand {
     }
   }
 
+  /** Thả ngoài canvas: kết thúc nhấn/kéo, không thả vào đâu. */
+  private cancelPress(): void {
+    this.press = null;
+    this.clearGhost();
+  }
+
   private onUp(p: Phaser.Input.Pointer): void {
     const pr = this.press;
     this.press = null;
@@ -150,7 +157,7 @@ export class Hand {
       sl.rarity.setPosition(x + 8, Y + 6 - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));
       if (selected) {
         this.discardBtn.bg.setPosition(x + CARD_W - 56, Y - lift);
-        this.discardBtn.label.setPosition(x + CARD_W - 28, Y - lift + 20);
+        this.discardBtn.label.setPosition(x + CARD_W - 28, Y - lift + 28);
       }
     }
     this.discardBtn.setVisible(this.selectedId !== null);

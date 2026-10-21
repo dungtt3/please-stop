@@ -3,7 +3,8 @@ import { sellUnit } from '../sim/commands';
 import { modifierOf } from '../sim/enemies';
 import { activeCooldown } from '../sim/skills';
 import { computeStats } from '../sim/units';
-import type { CardStat, CommandResult, GameState, Unit } from '../sim/types';
+import type { GameConfig } from '../config';
+import type { CardStat, ClassId, CommandResult, GameState, Unit } from '../sim/types';
 import { Button, BTN_H } from './BottomBar';
 import { CARD_STAT_NAME, COLORS, FONT, fmtCardValue, GAME_W, RARITY_COLOR, RARITY_NAME, TOP_BAR_H } from './theme';
 
@@ -84,6 +85,7 @@ export class UnitPanel {
       `Thẻ: ${cards.length ? cards.join(', ') : 'chưa có'}`,
       `Nội tại: ${def.passive}`,
       `Kỹ năng: ${def.active}`,
+      skillNumbers(cfg, u.classId),
     ];
     this.body.setText(lines.join('\n'));
     const cd = activeCooldown(cfg, u.classId, u.level);
@@ -100,5 +102,17 @@ export class UnitPanel {
     this.height = y + BTN_H + PAD - Y;
     this.bg.setSize(W, this.height);
     this.sellBtn.setDim(s.phase === 'won' || s.phase === 'lost');
+  }
+}
+
+/** Số liệu kỹ năng lấy trực tiếp từ config (không ghi cứng trong mô tả). */
+function skillNumbers(cfg: GameConfig, id: ClassId): string {
+  const k = cfg.skills;
+  const pct = (m: number) => `${Math.round(m * 100)}%`;
+  switch (id) {
+    case 'swordsman': return `(Đòn thứ ${k.swordsman.comboEvery} ×${k.swordsman.comboMult}; chém xoáy ${pct(k.swordsman.whirlMult)} ST)`;
+    case 'archer': return `(${k.archer.rainArrows} mũi, mỗi mũi ${pct(k.archer.rainMult)} ST)`;
+    case 'mage': return `(Thiên thạch ${pct(k.mage.meteorMult)} ST; cháy ${k.mage.burnDuration}s)`;
+    default: return `(Cứ ${k.summoner.passiveEvery}s gọi 1 lính; kỹ năng gọi ${k.summoner.waveCount} lính)`;
   }
 }

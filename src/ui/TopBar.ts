@@ -22,14 +22,14 @@ export class TopBar {
     this.timer = mk(870, 18, COLORS.text);
     this.speedBtn = scene.add
       .text(GAME_W - 16, TOP_BAR_H / 2, '', {
-        fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 6 },
+        fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 16 },
       })
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
     this.speedBtn.on('pointerdown', toggleSpeed);
     this.speedBtn.setText('Tốc độ ×1');
     const gear = scene.add
       .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', {
-        fontFamily: FONT, fontSize: '28px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 8 },
+        fontFamily: FONT, fontSize: '28px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 12 },
       })
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
     gear.on('pointerdown', openMenu);

@@ -463,13 +463,13 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
       setStatus('Nhập thất bại, giá trị giữ nguyên.', 'bad');
       return;
     }
-    const r = importConfig(text);
+    const r = importConfig(text, draft);
     draft = r.config;
     invalid.clear();
     renderForm();
     showErrors(r.errors);
     errBox.dataset.import = r.errors.length ? '1' : '';
-    if (r.errors.length) setStatus(`Đã nạp với ${r.errors.length} lỗi (giá trị sai giữ mặc định). Bấm Lưu để lưu.`, 'bad');
+    if (r.errors.length) setStatus(`Đã nạp với ${r.errors.length} lỗi (giá trị sai giữ giá trị cũ). Bấm Lưu để lưu.`, 'bad');
     else setStatus('Đã nạp file. Bấm Lưu để lưu.', 'ok');
   });
   closeBtn.addEventListener('click', close);

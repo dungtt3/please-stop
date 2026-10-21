@@ -28,7 +28,7 @@ export const MODIFIERS: Record<ModifierId, ModifierDef> = {
   goldRain: { ...base, name: 'Mưa vàng', desc: 'Quái rơi vàng ×2', goldDropMult: 2 },
   swarm: { ...base, name: 'Bầy đàn', desc: 'Số quái ×1.5 nhưng máu chỉ 70%', countMult: 1.5, hpMult: 0.7 },
   ironArmor: { ...base, name: 'Giáp sắt', desc: 'Quái chịu 80% sát thương, thưởng wave ×2', damageTakenMult: 0.8, waveRewardMult: 2 },
-  darkness: { ...base, name: 'Bóng tối', desc: 'Tầm đánh giảm 20%, thưởng wave ×2', rangeMult: 0.8, waveRewardMult: 2 },
+  darkness: { ...base, name: 'Bóng đêm', desc: 'Tầm đánh giảm 20%, thưởng wave ×2', rangeMult: 0.8, waveRewardMult: 2 },
 };
 
 export const MODIFIER_RULES: ModifierRules = { fromWave: 2, chance: 0.5 };

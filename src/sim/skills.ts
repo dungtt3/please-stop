@@ -4,9 +4,12 @@ import { enemyPos } from './enemies';
 import { spawnMinion } from './minions';
 import type { ClassId, Enemy, GameState, Unit, UnitStats, Vec } from './types';
 
-/** Hồi chiêu skill chủ động: cooldown × (1 − giảm × (cấp − 1)). */
+/** Sàn an toàn (giây) cho hồi chiêu skill chủ động. */
+export const MIN_ACTIVE_COOLDOWN = 0.5;
+
+/** Hồi chiêu skill chủ động: cooldown × (1 − giảm × (cấp − 1)), không thấp hơn sàn. */
 export function activeCooldown(cfg: GameConfig, classId: ClassId, level: number): number {
-  return cfg.skills[classId].cooldown * (1 - cfg.skillCooldownPerLevel * (level - 1));
+  return Math.max(MIN_ACTIVE_COOLDOWN, cfg.skills[classId].cooldown * (1 - cfg.skillCooldownPerLevel * (level - 1)));
 }
 
 function hit(state: GameState, stats: UnitStats, enemy: Enemy, mult: number): void {
