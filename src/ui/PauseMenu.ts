@@ -1,15 +1,16 @@
 import Phaser from 'phaser';
 import { sfx } from '../audio/sfx';
+import { motion } from '../settings/motion';
 import { Button } from './BottomBar';
-import { COLORS, FONT, GAME_H, GAME_W } from './theme';
+import { LAYOUT } from './layout';
+import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 
 const DEPTH = 450; // trên mọi thứ trừ màn kết quả (500)
-const PANEL_W = 560;
-const PANEL_H = 470;
+const P = LAYOUT.popup;
 const ON_FILL = 0x2e7d32;
 const OFF_FILL = 0x5a3030;
 const DANGER_FILL = 0xc62828;
-const KNOB_R = 16;
+const KNOB_R = P.slider.knobR;
 
 export interface PauseMenuHooks {
   /** Popup mở/đóng: GameScene dừng/chạy lại ván và âm thanh. */
@@ -20,9 +21,17 @@ export interface PauseMenuHooks {
   saveAndLeave(): Promise<void>;
   /** Lúc wave: đã xác nhận thoát — ghi thua và về màn hình chính. */
   quitAsLoss(): void;
+  /** Chơi lại đã xác nhận: ghi thua một lần và bắt đầu ván mới (hook tự đóng popup). */
+  restart(): void;
 }
 
-/** Popup tạm dừng: Tiếp tục / Âm thanh / Màn hình chính. Mọi đối tượng được tạo lúc mở và hủy lúc đóng. */
+type Fadable = Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Alpha;
+interface Fade {
+  o: Fadable;
+  a: number;
+}
+
+/** Popup tạm dừng: Tiếp tục / Chơi lại / Âm thanh / Giảm chuyển động / Màn hình chính. Mọi đối tượng được tạo lúc mở và hủy lúc đóng. */
 export class PauseMenu {
   private objs: Phaser.GameObjects.GameObject[] = [];
   private buttons: Button[] = [];
@@ -32,6 +41,8 @@ export class PauseMenu {
   private busy = false;
   private dragging = false;
   private soundBtn: Button | null = null;
+  private motionBtn: Button | null = null;
+  private fadeTween: Phaser.Tweens.Tween | null = null;
   private fill: Phaser.GameObjects.Rectangle | null = null;
   private knob: Phaser.GameObjects.Arc | null = null;
   private pct: Phaser.GameObjects.Text | null = null;
@@ -54,12 +65,18 @@ export class PauseMenu {
     return this.isOpen;
   }
 
+  /** Hộp xác nhận (Thoát / Chơi lại) đang mở. */
+  get confirming(): boolean {
+    return this.confirmObjs.length > 0;
+  }
+
   show(): void {
     if (this.isOpen) return;
     this.isOpen = true;
     this.busy = false;
     this.hooks.onToggle(true);
     this.build();
+    this.fadeInAll();
     this.scene.input.on('pointermove', this.onMove);
     this.scene.input.on('pointerup', this.onUp);
     this.scene.input.on('pointerupoutside', this.onUp);
@@ -68,80 +85,167 @@ export class PauseMenu {
   close(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
-    this.teardown();
+    this.teardown(true);
     this.hooks.onToggle(false);
+  }
+
+  /** Phím tắt Tiếp tục (như bấm nút): bỏ qua khi đang lưu/đang rời. */
+  requestClose(): void {
+    this.onContinue();
+  }
+
+  /** Phím Esc trong hộp xác nhận = Không. */
+  cancelConfirm(): void {
+    if (this.busy) return;
+    this.destroyConfirm();
   }
 
   /** Scene tắt/restart: hủy mọi thứ, không gọi hook (scene đã tự dọn). */
   private dispose(): void {
     this.isOpen = false;
-    this.teardown();
+    this.teardown(false);
   }
 
-  private teardown(): void {
+  private items(): Phaser.GameObjects.GameObject[] {
+    const items: Phaser.GameObjects.GameObject[] = [...this.objs];
+    for (const b of this.buttons) items.push(b.bg, b.label);
+    return items;
+  }
+
+  private teardown(fade: boolean): void {
     this.scene.input.off('pointermove', this.onMove);
     this.scene.input.off('pointerup', this.onUp);
     this.scene.input.off('pointerupoutside', this.onUp);
     this.endDrag();
     this.destroyConfirm();
-    for (const b of this.buttons) {
-      b.bg.destroy();
-      b.label.destroy();
-    }
-    for (const o of this.objs) o.destroy();
+    this.fadeTween?.stop();
+    this.fadeTween = null;
+    const items = this.items();
     this.buttons = [];
     this.objs = [];
     this.soundBtn = null;
+    this.motionBtn = null;
     this.fill = null;
     this.knob = null;
     this.pct = null;
     this.status = null;
+    this.retire(items, fade && !motion.reduced);
+  }
+
+  /** Hủy các đối tượng; khi `fade` thì chặn chạm ngay rồi mờ dần (≤ 200 ms) mới hủy. */
+  private retire(items: Phaser.GameObjects.GameObject[], fade: boolean): void {
+    if (!fade || items.length === 0) {
+      for (const o of items) o.destroy();
+      return;
+    }
+    const list = this.fades(items);
+    for (const o of items) o.disableInteractive();
+    this.scene.tweens.addCounter({
+      from: 1,
+      to: 0,
+      duration: P.fadeMs,
+      onUpdate: (tw) => {
+        const k = tw.getValue() ?? 0;
+        for (const f of list) f.o.setAlpha(f.a * k);
+      },
+      onComplete: () => {
+        for (const o of items) o.destroy();
+      },
+    });
+  }
+
+  private fades(items: Phaser.GameObjects.GameObject[]): Fade[] {
+    return items
+      .filter((o): o is Fadable => typeof (o as Partial<Fadable>).alpha === 'number')
+      .map((o) => ({ o, a: o.alpha }));
+  }
+
+  /** Mờ vào (≤ 200 ms); giảm chuyển động thì hiện ngay. */
+  private fadeInAll(): void {
+    if (motion.reduced) return;
+    const list = this.fades(this.items());
+    for (const f of list) f.o.setAlpha(0);
+    this.fadeTween = this.scene.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: P.fadeMs,
+      onUpdate: (tw) => {
+        const k = tw.getValue() ?? 1;
+        for (const f of list) f.o.setAlpha(f.a * k);
+      },
+      onComplete: () => {
+        this.fadeTween = null;
+      },
+    });
   }
 
   private build(): void {
     const s = this.scene;
     const cx = GAME_W / 2;
-    const left = cx - PANEL_W / 2;
-    const top = (GAME_H - PANEL_H) / 2;
+    const box = P.box;
     this.objs.push(s.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.75).setOrigin(0).setDepth(DEPTH).setInteractive());
-    this.objs.push(s.add.rectangle(left, top, PANEL_W, PANEL_H, COLORS.bar).setOrigin(0).setDepth(DEPTH + 1).setStrokeStyle(2, 0x5b6585));
+    this.objs.push(s.add.rectangle(box.x, box.y, box.w, box.h, COLORS.bar).setOrigin(0).setDepth(DEPTH + 1).setStrokeStyle(2, 0x5b6585));
     this.objs.push(
-      s.add.text(cx, top + 46, 'Tạm dừng', { fontFamily: FONT, fontSize: '36px', fontStyle: 'bold', color: '#ffffff' })
+      s.add.text(cx, P.titleY, 'Tạm dừng', textStyle({ size: 36, bold: true, color: '#ffffff' }))
         .setOrigin(0.5).setDepth(DEPTH + 2),
     );
     const btnOpts = (fill?: number) => ({ depth: DEPTH + 2, fontSize: 26, fill });
-    this.buttons.push(new Button(s, left + 40, top + 92, PANEL_W - 80, 64, 'Tiếp tục', () => this.onContinue(), btnOpts(ON_FILL)));
+    this.buttons.push(Button.at(s, P.continue, 'Tiếp tục', () => this.onContinue(), btnOpts(ON_FILL)));
+    this.buttons.push(Button.at(s, P.restart, 'Chơi lại', () => this.onRestart(), btnOpts()));
 
     // Hàng âm thanh
     this.objs.push(
-      s.add.text(left + 40, top + 196, 'Âm thanh', { fontFamily: FONT, fontSize: '26px', color: COLORS.text })
+      s.add.text(P.slider.x, P.soundLabelY, 'Âm thanh', textStyle({ size: 26, color: COLORS.text }))
         .setOrigin(0, 0.5).setDepth(DEPTH + 2),
     );
-    this.soundBtn = new Button(s, left + PANEL_W - 40 - 140, top + 168, 140, 56, '', () => this.toggleSound(), { depth: DEPTH + 2, fontSize: 24 });
+    this.soundBtn = Button.at(s, P.sound, '', () => this.toggleSound(), { depth: DEPTH + 2, fontSize: 24 });
     this.buttons.push(this.soundBtn);
 
-    // Thanh âm lượng: vùng chạm cao 56px quanh thanh để dễ kéo bằng ngón tay.
-    this.trackX = left + 40;
-    this.trackW = PANEL_W - 80 - 90;
-    const ty = top + 268;
+    // Thanh âm lượng: vùng chạm cao 82px quanh thanh để dễ kéo bằng ngón tay.
+    this.trackX = P.slider.x;
+    this.trackW = P.slider.w;
+    const ty = P.slider.y;
     this.objs.push(s.add.rectangle(this.trackX, ty - 5, this.trackW, 10, 0x0d0f16).setOrigin(0).setDepth(DEPTH + 2).setStrokeStyle(1, 0x5b6585));
     this.fill = s.add.rectangle(this.trackX, ty - 5, 0, 10, 0x66bb6a).setOrigin(0).setDepth(DEPTH + 3);
     this.knob = s.add.circle(this.trackX, ty, KNOB_R, 0xffffff).setDepth(DEPTH + 4).setStrokeStyle(2, 0x5b6585);
-    const hit = s.add.rectangle(this.trackX - KNOB_R, ty - 28, this.trackW + 2 * KNOB_R, 56, 0xffffff, 0.001)
+    const sh = P.slider.hit;
+    const hit = s.add.rectangle(sh.x, sh.y, sh.w, sh.h, 0xffffff, 0.001)
       .setOrigin(0).setDepth(DEPTH + 5).setInteractive({ useHandCursor: true });
     hit.on('pointerdown', (p: Phaser.Input.Pointer) => {
       this.dragging = true;
       this.setFromX(p.x);
     });
-    this.pct = s.add.text(left + PANEL_W - 40, ty, '', { fontFamily: FONT, fontSize: '24px', color: COLORS.text })
+    this.pct = s.add.text(box.x + box.w - 40, ty, '', textStyle({ size: 24, color: COLORS.text }))
       .setOrigin(1, 0.5).setDepth(DEPTH + 2);
     this.objs.push(this.fill, this.knob, hit, this.pct);
 
-    this.buttons.push(new Button(s, left + 40, top + 326, PANEL_W - 80, 64, 'Màn hình chính', () => this.onHome(), btnOpts()));
-    this.status = s.add.text(cx, top + 424, '', { fontFamily: FONT, fontSize: '22px', color: COLORS.muted })
+    // Hàng giảm chuyển động
+    this.objs.push(
+      s.add.text(P.slider.x, P.motionLabelY, 'Giảm chuyển động', textStyle({ size: 26, color: COLORS.text }))
+        .setOrigin(0, 0.5).setDepth(DEPTH + 2),
+    );
+    this.motionBtn = Button.at(s, P.motion, '', () => this.toggleMotion(), { depth: DEPTH + 2, fontSize: 24 });
+    this.buttons.push(this.motionBtn);
+
+    this.buttons.push(Button.at(s, P.home, 'Màn hình chính', () => this.onHome(), btnOpts()));
+    this.status = s.add.text(cx, P.statusY, '', textStyle({ size: 22, color: COLORS.muted }))
       .setOrigin(0.5).setDepth(DEPTH + 2);
     this.objs.push(this.status);
     this.refreshSound();
+    this.refreshMotion();
+  }
+
+  private refreshMotion(): void {
+    const on = motion.reduced;
+    this.motionBtn?.setText(on ? 'Bật' : 'Tắt');
+    this.motionBtn?.bg.setFillStyle(on ? ON_FILL : OFF_FILL);
+  }
+
+  private toggleMotion(): void {
+    if (this.busy) return;
+    // Các hiệu ứng đọc `motion.reduced` lúc bắt đầu nên có hiệu lực ngay.
+    motion.set(!motion.reduced);
+    this.refreshMotion();
   }
 
   private refreshSound(): void {
@@ -189,10 +293,15 @@ export class PauseMenu {
   private onHome(): void {
     if (this.busy) return;
     if (this.hooks.phase() === 'wave') {
-      this.showConfirm();
+      this.showConfirm('Thoát bây giờ sẽ bị tính thua. Thoát?', () => this.onQuit());
       return;
     }
     void this.leaveWithSave();
+  }
+
+  private onRestart(): void {
+    if (this.busy) return;
+    this.showConfirm('Chơi lại từ đầu? Ván này sẽ bị tính thua.', () => this.onRestartYes());
   }
 
   private async leaveWithSave(): Promise<void> {
@@ -206,25 +315,22 @@ export class PauseMenu {
     }
   }
 
-  private showConfirm(): void {
+  private showConfirm(message: string, onYes: () => void): void {
     if (this.confirmObjs.length) return;
     const s = this.scene;
     const cx = GAME_W / 2;
-    const w = 520;
-    const h = 250;
-    const top = (GAME_H - h) / 2;
+    const c = P.confirm;
     const d = DEPTH + 20;
     this.confirmObjs.push(s.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.6).setOrigin(0).setDepth(d).setInteractive());
-    this.confirmObjs.push(s.add.rectangle(cx - w / 2, top, w, h, COLORS.bar).setOrigin(0).setDepth(d + 1).setStrokeStyle(2, 0x5b6585));
+    this.confirmObjs.push(s.add.rectangle(c.box.x, c.box.y, c.box.w, c.box.h, COLORS.bar).setOrigin(0).setDepth(d + 1).setStrokeStyle(2, 0x5b6585));
     this.confirmObjs.push(
-      s.add.text(cx, top + 70, 'Thoát bây giờ sẽ bị tính thua. Thoát?', {
-        fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffffff', align: 'center', wordWrap: { width: w - 60 },
-      }).setOrigin(0.5).setDepth(d + 2),
+      s.add.text(cx, c.textY, message, textStyle({
+        size: 28, bold: true, color: '#ffffff', align: 'center', wrap: c.box.w - 60,
+      })).setOrigin(0.5).setDepth(d + 2),
     );
-    const bw = (w - 60 - 16) / 2;
     this.confirmButtons.push(
-      new Button(s, cx - w / 2 + 30, top + h - 100, bw, 64, 'Có', () => this.onQuit(), { depth: d + 2, fontSize: 26, fill: DANGER_FILL }),
-      new Button(s, cx - w / 2 + 30 + bw + 16, top + h - 100, bw, 64, 'Không', () => this.destroyConfirm(), { depth: d + 2, fontSize: 26 }),
+      Button.at(s, c.yes, 'Có', onYes, { depth: d + 2, fontSize: 26, fill: DANGER_FILL }),
+      Button.at(s, c.no, 'Không', () => this.destroyConfirm(), { depth: d + 2, fontSize: 26 }),
     );
   }
 
@@ -242,5 +348,11 @@ export class PauseMenu {
     if (this.busy) return;
     this.busy = true;
     this.hooks.quitAsLoss();
+  }
+
+  private onRestartYes(): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.hooks.restart();
   }
 }

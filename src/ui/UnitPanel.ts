@@ -3,17 +3,24 @@ import { sellUnit } from '../sim/commands';
 import { modifierOf } from '../sim/enemies';
 import { activeCooldown } from '../sim/skills';
 import { computeStats } from '../sim/units';
-import type { GameConfig } from '../config';
-import type { CardStat, ClassId, CommandResult, GameState, Unit } from '../sim/types';
+import type { CommandResult, GameState, Unit } from '../sim/types';
 import { Button, BTN_H } from './BottomBar';
-import { CARD_STAT_NAME, COLORS, FONT, fmtCardValue, GAME_W, RARITY_COLOR, RARITY_NAME, TOP_BAR_H } from './theme';
+import { LAYOUT } from './layout';
+import { COLORS, RARITY_COLOR, textStyle } from './theme';
+import {
+  PANEL_ACTION_GAP, PANEL_BAR_DY, PANEL_BAR_H, PANEL_BODY_TOP, PANEL_FONT, PANEL_LINE_SPACING, PANEL_MAX_BODY_H,
+  PANEL_MAX_BODY_LINES, PANEL_PAD, PANEL_SELL_W, PANEL_W, PANEL_X, PANEL_Y, panelHeightForBody, unitPanelText,
+} from './unitPanelText';
 
-const W = 208;
-const X = GAME_W - W - 4;
-const Y = TOP_BAR_H + 8;
-const PAD = 8;
+const W = PANEL_W;
+const X = PANEL_X;
+const Y = PANEL_Y;
+const PAD = PANEL_PAD;
+const SELL_X = LAYOUT.panel.sell.rect.x;
+/** Bề rộng thanh hồi chiêu (bên trái nút Bán). */
+const CD_W = W - 2 * PAD - PANEL_SELL_W - 12;
 
-/** Bảng chi tiết ở lề phải bản đồ (không che ô nào). */
+/** Bảng chi tiết ở cột phải, dưới thanh boss (bản đồ ở MAP_LEFT nên không che ô nào). */
 export class UnitPanel {
   private bg: Phaser.GameObjects.Rectangle;
   private title: Phaser.GameObjects.Text;
@@ -28,20 +35,21 @@ export class UnitPanel {
 
   constructor(scene: Phaser.Scene, private getState: () => GameState, act: (r: CommandResult) => void, private deselect: () => void) {
     this.bg = scene.add.rectangle(X, Y, W, 100, COLORS.bar, 0.96).setOrigin(0).setDepth(120).setStrokeStyle(3, 0x5b6585);
-    this.title = scene.add.text(X + PAD, Y + PAD, '', { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: COLORS.text }).setDepth(121);
+    this.title = scene.add.text(X + PAD, Y + PAD, '', textStyle({ size: 22, bold: true, color: COLORS.text })).setDepth(121);
     this.body = scene.add
-      .text(X + PAD, Y + 40, '', { fontFamily: FONT, fontSize: '14px', color: COLORS.text, lineSpacing: 4, wordWrap: { width: W - 2 * PAD } })
+      .text(X + PAD, Y + PANEL_BODY_TOP, '', textStyle({ size: PANEL_FONT, color: COLORS.text, wrap: W - 2 * PAD, extra: { lineSpacing: PANEL_LINE_SPACING } }))
       .setDepth(121);
-    this.cdLabel = scene.add.text(X + PAD, 0, '', { fontFamily: FONT, fontSize: '13px', color: COLORS.muted }).setDepth(121);
-    this.cdBack = scene.add.rectangle(X + PAD, 0, W - 2 * PAD, 10, 0x000000, 0.6).setOrigin(0).setDepth(121);
-    this.cdFill = scene.add.rectangle(X + PAD, 0, 0, 10, 0x42a5f5).setOrigin(0).setDepth(122);
-    this.sellBtn = new Button(scene, X + PAD, 0, W - 2 * PAD, BTN_H, '', () => {
+    this.cdLabel = scene.add.text(X + PAD, 0, '', textStyle({ size: 18, color: COLORS.muted })).setDepth(121);
+    this.cdBack = scene.add.rectangle(X + PAD, 0, CD_W, PANEL_BAR_H, 0x000000, 0.6).setOrigin(0).setDepth(121);
+    this.cdFill = scene.add.rectangle(X + PAD, 0, 0, PANEL_BAR_H, 0x42a5f5).setOrigin(0).setDepth(122);
+    // Nút Bán dựng từ LAYOUT (hình + vùng chạm); update() chỉ dời theo chiều dọc, tối đa tới đúng vị trí LAYOUT.
+    this.sellBtn = Button.at(scene, LAYOUT.panel.sell, '', () => {
       const s = this.getState();
       const sel = this.selectedUnit(s);
       if (!sel) return;
       act(sellUnit(s, sel.slot));
       this.deselect();
-    }, { depth: 121, fill: 0x7a4a1e, fontSize: 18 });
+    }, { depth: 121, fill: 0x7a4a1e, fontSize: 22 });
     this.setVisible(false);
   }
 
@@ -69,50 +77,24 @@ export class UnitPanel {
     }
     if (!this.visible) this.setVisible(true);
     const cfg = s.config;
-    const def = cfg.classes[u.classId];
     const st = computeStats(cfg, u, modifierOf(s).rangeMult);
-    this.title.setText(`${def.name} ★${u.level}`).setColor('#' + RARITY_COLOR[u.rarity].toString(16).padStart(6, '0'));
-    const cards = (Object.keys(u.cards) as CardStat[])
-      .filter((k) => u.cards[k] > 0)
-      .map((k) => `${fmtCardValue(k, u.cards[k])} ${CARD_STAT_NAME[k]}`);
-    const lines = [
-      `Độ hiếm: ${RARITY_NAME[u.rarity]}`,
-      `Sát thương: ${st.damage.toFixed(1)}`,
-      `Tốc đánh: ${st.attackSpeed.toFixed(2)}/s`,
-      `Tầm đánh: ${st.range.toFixed(1)} ô`,
-      `Chí mạng: ${Math.round(st.critChance * 100)}%`,
-      `Ngẫu nhiên: +${Math.round(u.bonus.damage * 100)}% ST, +${Math.round(u.bonus.attackSpeed * 100)}% TĐ`,
-      `Thẻ: ${cards.length ? cards.join(', ') : 'chưa có'}`,
-      `Nội tại: ${def.passive}`,
-      `Kỹ năng: ${def.active}`,
-      skillNumbers(cfg, u.classId),
-    ];
-    this.body.setText(lines.join('\n'));
+    const text = unitPanelText(cfg, u, st);
+    this.title.setText(text.title).setColor('#' + RARITY_COLOR[u.rarity].toString(16).padStart(6, '0'));
+    // Thân bị chặn trên (cắt dòng) để hàng cuối không thấp hơn nút Bán ở LAYOUT (không đè nút thanh dưới).
+    this.body.setMaxLines(PANEL_MAX_BODY_LINES).setText(text.body);
     const cd = activeCooldown(cfg, u.classId, u.level);
     const frac = cd > 0 ? Math.max(0, Math.min(1, 1 - u.skillCooldown / cd)) : 1;
-    let y = this.body.y + this.body.height + 8;
-    this.cdLabel.setPosition(X + PAD, y).setText(u.skillCooldown > 0 ? `Hồi chiêu: ${u.skillCooldown.toFixed(1)}s` : 'Kỹ năng sẵn sàng');
-    y += 18;
-    this.cdBack.setPosition(X + PAD, y);
-    this.cdFill.setPosition(X + PAD, y).setSize((W - 2 * PAD) * frac, 10);
-    y += 18;
-    this.sellBtn.bg.setPosition(X + PAD, y);
-    this.sellBtn.label.setPosition(X + W / 2, y + BTN_H / 2);
+    // Hàng cuối: nhãn + thanh hồi chiêu bên trái, nút Bán bên phải; vùng chạm Bán nằm gọn trong bảng.
+    const bodyH = Math.min(this.body.height, PANEL_MAX_BODY_H);
+    const row = this.body.y + bodyH + PANEL_ACTION_GAP;
+    this.cdLabel.setPosition(X + PAD, row).setText(u.skillCooldown > 0 ? `Hồi chiêu: ${u.skillCooldown.toFixed(1)}s` : 'Kỹ năng sẵn sàng');
+    this.cdBack.setPosition(X + PAD, row + PANEL_BAR_DY);
+    this.cdFill.setPosition(X + PAD, row + PANEL_BAR_DY).setSize(CD_W * frac, PANEL_BAR_H);
+    this.sellBtn.bg.setPosition(SELL_X, row);
+    this.sellBtn.label.setPosition(SELL_X + PANEL_SELL_W / 2, row + BTN_H / 2);
     this.sellBtn.setText(`Bán (+${Math.floor(u.goldInvested / 2)} vàng)`);
-    this.height = y + BTN_H + PAD - Y;
+    this.height = panelHeightForBody(bodyH);
     this.bg.setSize(W, this.height);
     this.sellBtn.setDim(s.phase === 'won' || s.phase === 'lost');
-  }
-}
-
-/** Số liệu kỹ năng lấy trực tiếp từ config (không ghi cứng trong mô tả). */
-function skillNumbers(cfg: GameConfig, id: ClassId): string {
-  const k = cfg.skills;
-  const pct = (m: number) => `${Math.round(m * 100)}%`;
-  switch (id) {
-    case 'swordsman': return `(Đòn thứ ${k.swordsman.comboEvery} ×${k.swordsman.comboMult}; chém xoáy ${pct(k.swordsman.whirlMult)} ST)`;
-    case 'archer': return `(${k.archer.rainArrows} mũi, mỗi mũi ${pct(k.archer.rainMult)} ST)`;
-    case 'mage': return `(Thiên thạch ${pct(k.mage.meteorMult)} ST; cháy ${k.mage.burnDuration}s)`;
-    default: return `(Cứ ${k.summoner.passiveEvery}s gọi 1 lính; kỹ năng gọi ${k.summoner.waveCount} lính)`;
   }
 }

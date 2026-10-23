@@ -18,20 +18,30 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { sfx } from '../audio/sfx';
 import { Banner, Toast } from '../ui/Toast';
 import { browserStore } from '../settings/configStore';
+import { LEAK_CUE_MIN_GAP_MS, motion, REDUCED_FX_MAX_MS, ShakeGate } from '../settings/motion';
 import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
 import { recordRun, TIMEOUT_MS } from '../net/cloud';
+import { recordBest } from '../save/best';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
+import { runRestart } from './restartFlow';
+import { isEditableTarget, keyAction } from '../ui/keys';
+import { getOrientation, onOrientation, soundSuspended } from '../ui/orientation';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
-import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
+import { boardTile, topBarOwns } from '../ui/layout';
+import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, TOP_BAR_H, textStyle } from '../ui/theme';
 import { BossBar } from '../ui/BossBar';
 import { BoardViews } from '../visuals/BoardViews';
 import { Effects } from '../visuals/effects';
 import { getVisuals } from '../visuals/loader';
+import { drawRarityPips, drawUnitBody } from '../visuals/views';
 
 const DRAG_THRESHOLD = 8;
+/** Giảm chuyển động: viền đỏ mờ ở mép bàn khi quái lọt. */
+const LEAK_CUE_COLOR = 0xe53935;
+const LEAK_CUE_ALPHA = 0.5;
 
 export type GameStart =
   | { kind: 'new' }
@@ -69,11 +79,22 @@ export class GameScene extends Phaser.Scene {
   private pauseMenu!: PauseMenu;
   private toast!: Toast;
   private banner!: Banner;
+  /** Chống rung màn hình dồn dập (≥ 300 ms giữa hai lần). */
+  private readonly shakeGate = new ShakeGate(() => this.time.now);
+  /** Giảm chuyển động: viền đỏ + nhấp máu khi quái lọt tối đa < 3 lần/giây (chống nhấp nháy). */
+  private readonly leakCueGate = new ShakeGate(() => this.time.now, LEAK_CUE_MIN_GAP_MS);
+  /** Một viền duy nhất dùng lại cho mọi lần báo lọt (khởi động lại hiệu ứng mờ, không chồng viền). */
+  private leakEdge: Phaser.GameObjects.Rectangle | null = null;
+  private leakEdgeTween: Phaser.Tweens.Tween | null = null;
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
+  /** Lớp phủ "Xoay ngang" đang che màn hình: ván đứng yên (kể cả đồng hồ quiz), độc lập với `menuOpen`. */
+  private orientationBlocked = false;
   /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
   private shield = new PointerShield();
   private runRecorded = false;
+  /** Ván vừa kết thúc ở màn này phá kỷ lục cá nhân (kỷ lục cũ được đọc trước khi ghi). */
+  private newBest = false;
   /** Đã phát tiếng thắng/thua của ván này (chỉ một lần). */
   private endSounded = false;
   private saver!: RunSaver;
@@ -98,13 +119,17 @@ export class GameScene extends Phaser.Scene {
     });
     // Scene được dùng lại giữa các lần vào ván: xóa trạng thái cũ (đối tượng hiển thị đã bị hủy).
     this.staticTexts = [];
+    this.leakEdge = null;
+    this.leakEdgeTween = null;
     this.menuOpen = false;
+    this.orientationBlocked = false;
     this.shield = new PointerShield();
     this.halted = false;
     this.speed = 1;
     this.selectedUnitId = null;
     this.drag = null;
     this.runRecorded = false;
+    this.newBest = false;
     this.endSounded = false;
     const cfg = this.resolveCfg().config;
     if (start.kind === 'new') {
@@ -155,8 +180,8 @@ export class GameScene extends Phaser.Scene {
       onToggle: (open) => {
         this.menuOpen = open;
         this.shield.arm();
-        sfx.setSuspended(open);
-        if (open) this.drag = null;
+        this.syncSound();
+        if (open) this.cancelInput();
       },
       phase: () => this.state.phase,
       saveAndLeave: async () => {
@@ -169,7 +194,35 @@ export class GameScene extends Phaser.Scene {
         if (this.saver.live) this.recordResult(false);
         this.scene.start('Start');
       },
+      restart: () => {
+        // Ghi thua đúng một lần (recordResult tự chống ghi lại, kể cả kỷ lục) rồi chơi ván mới.
+        runRestart({
+          halted: () => this.halted,
+          live: () => this.saver.live,
+          recordLoss: () => this.recordResult(false),
+          restart: () => this.restart(),
+          closePopup: () => this.pauseMenu.close(),
+        });
+      },
     });
+
+    // Phím tắt: một listener cho cả scene, gỡ khi SHUTDOWN. Bỏ qua phím gõ vào ô nhập tên (DOM).
+    const onKey = (e: KeyboardEvent): void => {
+      const act = keyAction(e.key, {
+        popupOpen: this.pauseMenu.open,
+        confirmOpen: this.pauseMenu.confirming,
+        blocked: this.resultScreen.open || this.quizModal.open || this.halted || this.orientationBlocked,
+        targetEditable: isEditableTarget(e.target),
+        modifier: e.ctrlKey || e.altKey || e.metaKey,
+        repeat: e.repeat,
+      });
+      if (act === null) return;
+      e.preventDefault(); // Space không cuộn trang
+      if (act === 'open') this.openMenu();
+      else if (act === 'close') this.pauseMenu.requestClose();
+      else this.pauseMenu.cancelConfirm();
+    };
+    window.addEventListener('keydown', onKey);
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
@@ -181,15 +234,20 @@ export class GameScene extends Phaser.Scene {
     const onVisibility = (): void => {
       if (document.visibilityState === 'hidden') {
         this.saver.flushPrep(this.state);
-        sfx.setSuspended(true);
-      } else {
-        sfx.setSuspended(this.menuOpen);
       }
+      this.syncSound();
     };
     document.addEventListener('visibilitychange', onVisibility);
+
+    // Lớp phủ xoay ngang: dừng ván khi dọc; xoay lại thì mở popup nếu mở được, không thì chỉ bỏ cờ.
+    const orient = getOrientation();
+    const offOrient = orient.onChange((blocked) => this.applyOrientation(blocked));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offOrient();
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('keydown', onKey);
       this.menuOpen = false;
+      this.orientationBlocked = false;
       sfx.setSuspended(document.visibilityState === 'hidden');
       this.saver.stop();
       this.conflictTimer?.remove(false);
@@ -201,6 +259,40 @@ export class GameScene extends Phaser.Scene {
     if (start.kind === 'new') this.saver.beginNew(this.state);
     else if (start.kind === 'resume') this.saver.resume(start.save);
     else this.saver.markLost(start.save);
+
+    // Vào ván khi màn hình đang dọc: đứng yên ngay (không tự mở popup).
+    if (orient.blocked()) this.applyOrientation(true);
+  }
+
+  /** Áp chuyển trạng thái hướng màn hình (logic thuần ở `onOrientation`). */
+  private applyOrientation(blocked: boolean): void {
+    const a = onOrientation(blocked, {
+      popupOpen: this.pauseMenu.open,
+      quizOpen: this.quizModal.open,
+      resultOpen: this.resultScreen.open,
+      halted: this.halted,
+    });
+    this.orientationBlocked = a.blocked;
+    if (a.cancelInput) this.cancelInput();
+    this.syncSound();
+    if (a.openPopup) this.openMenu();
+  }
+
+  /** Hủy kéo thả bàn chơi và nhấn/kéo thẻ bài đang dở (tạm dừng không được để chúng sống tiếp). */
+  private cancelInput(): void {
+    this.drag = null;
+    this.hand.cancelPress();
+  }
+
+  /** Âm thanh chỉ chạy khi không có popup, không bị lớp phủ xoay và tab đang hiện. */
+  private syncSound(): void {
+    sfx.setSuspended(
+      soundSuspended({
+        popupOpen: this.menuOpen,
+        orientationBlocked: this.orientationBlocked,
+        hidden: document.visibilityState === 'hidden',
+      }),
+    );
   }
 
   private onSaveConflict(): void {
@@ -215,6 +307,7 @@ export class GameScene extends Phaser.Scene {
   restart(): void {
     this.state = createGame(Date.now(), this.resolveCfg().config);
     this.runRecorded = false;
+    this.newBest = false;
     this.endSounded = false;
     this.halted = false;
     this.conflictTimer?.remove(false);
@@ -253,7 +346,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Nút ⚙: mở popup tạm dừng (không mở khi đang có màn kết quả, quiz hoặc ván bị đóng băng). */
   private openMenu(): void {
-    if (this.resultScreen.open || this.quizModal.open || this.halted) return;
+    if (this.resultScreen.open || this.quizModal.open || this.halted || this.orientationBlocked) return;
     this.pauseMenu.show();
   }
 
@@ -263,6 +356,8 @@ export class GameScene extends Phaser.Scene {
     this.runRecorded = true;
     const s = this.state;
     void recordRun({ waveReached: s.wave, won, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
+    // Cùng chỗ và cùng guard với recordRun: mỗi ván cập nhật kỷ lục đúng một lần.
+    this.newBest = recordBest(browserStore(), { wave: s.wave, kills: s.kills, won }).isNew;
     this.saver.end();
   }
 
@@ -273,8 +368,9 @@ export class GameScene extends Phaser.Scene {
   private layout(): void {
     const m = this.state.map;
     const availH = GAME_H - TOP_BAR_H - BOTTOM_H;
-    this.tileSize = Math.max(16, Math.floor(Math.min(MAX_TILE, availH / m.rows, GAME_W / m.cols)));
-    this.originX = (GAME_W - m.cols * this.tileSize) / 2;
+    // Ô tính từ chiều cao còn lại giữa hai thanh và chiều rộng trái cột phải (`layout.ts`).
+    this.tileSize = boardTile(m.rows, m.cols);
+    this.originX = MAP_LEFT;
     this.originY = TOP_BAR_H + (availH - m.rows * this.tileSize) / 2;
   }
 
@@ -303,7 +399,7 @@ export class GameScene extends Phaser.Scene {
     const label = (v: Vec, txt: string) => {
       const c = this.toScreen(tileCenter(v));
       this.staticTexts.push(
-        this.add.text(c.x, c.y, txt, { fontFamily: FONT, fontSize: '13px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(1),
+        this.add.text(c.x, c.y, txt, textStyle({ size: 14, color: '#ffffff', bold: true })).setOrigin(0.5).setDepth(1),
       );
     };
     label(first, 'Vào');
@@ -317,10 +413,13 @@ export class GameScene extends Phaser.Scene {
     return this.state.map.slots.findIndex((s) => s.x === tx && s.y === ty);
   }
 
-  /** Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. */
+  /**
+   * Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. Vùng chạm thanh dưới bắt đầu
+   * đúng ở đáy hàng cuối của bàn chơi (không lấn), nên chạm vào ô hàng cuối luôn thuộc bàn chơi.
+   */
   private uiOwns(p: Phaser.Input.Pointer): boolean {
     return (
-      this.menuOpen || p.y < TOP_BAR_H || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
+      this.menuOpen || this.orientationBlocked || topBarOwns(p.x, p.y) || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
       this.quizModal.open || this.resultScreen.open || this.hand.busy
     );
   }
@@ -364,7 +463,7 @@ export class GameScene extends Phaser.Scene {
   update(_: number, delta: number): void {
     this.shield.reset();
     const s = this.state;
-    if (!this.menuOpen && !this.halted) {
+    if (!this.menuOpen && !this.halted && !this.orientationBlocked) {
       const dt = Math.min(delta / 1000, 0.25) * this.speed;
       const live = s.phase !== 'won' && s.phase !== 'lost';
       tick(s, dt);
@@ -377,7 +476,7 @@ export class GameScene extends Phaser.Scene {
         sfx.play(s.phase === 'won' ? 'win' : 'lose');
       }
     }
-    this.saver.tick(s, delta, this.menuOpen || this.halted);
+    this.saver.tick(s, delta, this.menuOpen || this.halted || this.orientationBlocked);
     // Trước khi sync view: quái vừa chết còn view để chạy hoạt ảnh chết.
     for (const e of s.events) this.views.onEvent(e);
     this.render();
@@ -387,7 +486,7 @@ export class GameScene extends Phaser.Scene {
     this.hand.update(s);
     this.unitPanel.update(s, this.selectedUnitId);
     this.quizModal.update(s);
-    this.resultScreen.update(s);
+    this.resultScreen.update(s, this.newBest);
     for (const e of s.events) this.handleEvent(e);
     s.events.length = 0;
   }
@@ -397,10 +496,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawUnit(g: Phaser.GameObjects.Graphics, u: Unit, cx: number, cy: number, alpha = 1): void {
-    const sz = this.tileSize - 10;
     const col = this.state.config.classes[u.classId].color;
-    g.fillStyle(col, alpha).fillRect(cx - sz / 2, cy - sz / 2, sz, sz);
-    g.lineStyle(3, RARITY_COLOR[u.rarity], alpha).strokeRect(cx - sz / 2, cy - sz / 2, sz, sz);
+    drawUnitBody(g, u.classId, col, u.rarity, this.tileSize, cx, cy, true, alpha);
+    drawRarityPips(g, u.rarity, this.tileSize, cx, cy, alpha);
   }
 
   private render(): void {
@@ -440,10 +538,27 @@ export class GameScene extends Phaser.Scene {
   private floatText(v: Vec, txt: string, color: string, size: number): void {
     const c = this.toScreen(v);
     const tx = this.add
-      .text(c.x + Phaser.Math.Between(-8, 8), c.y, txt, { fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 })
+      .text(c.x + Phaser.Math.Between(-8, 8), c.y, txt, textStyle({ size, color, bold: true, stroke: { color: '#000000', width: 3 } }))
       .setOrigin(0.5)
       .setDepth(50);
-    this.tweens.add({ targets: tx, y: c.y - 36, alpha: 0, duration: 800, onComplete: () => tx.destroy() });
+    // Giảm chuyển động: chữ hiện tại chỗ rồi mờ, không bay lên.
+    const calm = motion.reduced;
+    this.tweens.add({ targets: tx, ...(calm ? {} : { y: c.y - 36 }), alpha: 0, duration: calm ? 600 : 800, onComplete: () => tx.destroy() });
+  }
+
+  /** Giảm chuyển động: viền đỏ mờ ở mép bàn thay cho rung, tắt trong ≤ 200 ms. */
+  private leakCue(): void {
+    const m = this.state.map;
+    const tl = this.toScreen({ x: 0, y: 0 });
+    this.leakEdgeTween?.stop();
+    this.leakEdge ??= this.add.rectangle(0, 0, 1, 1).setOrigin(0).setDepth(55);
+    this.leakEdge
+      .setPosition(tl.x, tl.y).setSize(m.cols * this.tileSize, m.rows * this.tileSize)
+      .setStrokeStyle(6, LEAK_CUE_COLOR, LEAK_CUE_ALPHA).setAlpha(1).setVisible(true);
+    this.leakEdgeTween = this.tweens.add({
+      targets: this.leakEdge, alpha: 0, duration: REDUCED_FX_MAX_MS,
+      onComplete: () => this.leakEdge?.setVisible(false),
+    });
   }
 
   private handleEvent(e: GameEvent): void {
@@ -465,7 +580,7 @@ export class GameScene extends Phaser.Scene {
         this.floatText(e.pos, String(Math.round(e.amount)), e.crit ? COLORS.crit : '#ffffff', e.crit ? 22 : 14);
         break;
       case 'kill':
-        this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 16);
+        this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 18);
         sfx.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         break;
       case 'skill':
@@ -492,7 +607,12 @@ ${m}` : `Wave ${e.wave}`);
         this.banner.show(`+${e.reward} vàng`, COLORS.gold);
         break;
       case 'leak':
-        this.cameras.main.shake(150, 0.004);
+        if (motion.reduced) {
+          if (this.leakCueGate.allow()) {
+            this.leakCue();
+            this.topBar.pulseHp();
+          }
+        } else if (this.shakeGate.allow()) this.cameras.main.shake(150, 0.002);
         sfx.play('leak');
         break;
       default:

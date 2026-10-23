@@ -1,19 +1,28 @@
 import Phaser from 'phaser';
 import { authAvailable, currentAccount, PROVIDER_LABEL, PROVIDERS, signIn, signOut, type Account } from '../net/auth';
 import { recordRun } from '../net/cloud';
+import { readBest, recordBest } from '../save/best';
 import { supabaseSaves } from '../net/saves';
 import { SaveManager, type StartInfo } from '../save/SaveManager';
 import { browserStore } from '../settings/configStore';
 import { runStatsOf, type RunSave } from '../sim/save';
 import { Button } from '../ui/BottomBar';
+import { askLayout, LAYOUT, startProvider } from '../ui/layout';
 import { Toast } from '../ui/Toast';
-import { COLORS, FONT, GAME_H, GAME_W } from '../ui/theme';
+import { COLORS, GAME_H, GAME_W, textStyle } from '../ui/theme';
 import { loadVisuals } from '../visuals/loader';
 import type { GameSceneData, GameStart } from './GameScene';
 
 const MAIN_FILL = 0x2e7d32;
 const DANGER_FILL = 0xc62828;
 const MODAL_DEPTH = 600;
+const L = LAYOUT.start;
+
+/** Một ván bỏ dở/mất được chốt ở màn bắt đầu: ghi ps_runs và cập nhật kỷ lục cá nhân đúng một lần cho ván đó. */
+function endRun(stats: ReturnType<typeof runStatsOf>): void {
+  void recordRun(stats);
+  recordBest(browserStore(), { wave: stats.waveReached, kills: stats.kills, won: stats.won });
+}
 
 interface Choice {
   label: string;
@@ -50,10 +59,10 @@ export class StartScene extends Phaser.Scene {
       window.removeEventListener('pageshow', onPageShow);
     });
     this.add
-      .text(GAME_W / 2, 130, 'Merge Defense', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: '#ffffff' })
+      .text(GAME_W / 2, L.titleY, 'Merge Defense', textStyle({ size: 64, bold: true, color: '#ffffff' }))
       .setOrigin(0.5);
     const loading = this.add
-      .text(GAME_W / 2, 340, 'Đang tải…', { fontFamily: FONT, fontSize: '28px', color: COLORS.muted })
+      .text(GAME_W / 2, L.loadingY, 'Đang tải…', textStyle({ size: 28, color: COLORS.muted }))
       .setOrigin(0.5);
     this.toast = new Toast(this);
     // Asset sprite tải một lần cho cả trang, song song với phần tải bên dưới; không bao giờ ném lỗi,
@@ -98,7 +107,7 @@ export class StartScene extends Phaser.Scene {
     if (account) {
       const c = manager.checkGuest();
       guest = c.guest;
-      if (c.lostGuest) void recordRun(runStatsOf(c.lostGuest));
+      if (c.lostGuest) endRun(runStatsOf(c.lostGuest));
     }
     let info = await manager.load();
     if (dead()) return;
@@ -135,7 +144,7 @@ export class StartScene extends Phaser.Scene {
           ])) === 0;
         if (dead()) return;
         if (keepDevice) {
-          void recordRun(runStatsOf(info.save));
+          endRun(runStatsOf(info.save));
           void manager.end(info.save.runId);
           const r = await manager.adoptGuest();
           if (dead()) return;
@@ -144,7 +153,7 @@ export class StartScene extends Phaser.Scene {
           if (dead()) return;
           if (r !== 'ok' && alreadyAdopted(info)) manager.dropGuest();
         } else {
-          void recordRun(runStatsOf(guest));
+          endRun(runStatsOf(guest));
           manager.dropGuest();
         }
       }
@@ -177,48 +186,62 @@ export class StartScene extends Phaser.Scene {
       else this.time.delayedCall(i * 1700, () => this.toast.show(n));
     });
 
-    const mainBtn = (y: number, text: string, onClick: () => void): void => {
-      new Button(this, cx - 210, y, 420, 72, text, onClick, { fontSize: 30, fill: MAIN_FILL });
+    const mainBtn = (text: string, onClick: () => void): void => {
+      Button.at(this, L.main, text, onClick, { fontSize: 30, fill: MAIN_FILL });
     };
-    const newGameBtn = (y: number, primary: boolean, save: RunSave): void => {
+    const newGameBtn = (primary: boolean, save: RunSave): void => {
       const onClick = this.guarded(async () => {
         const yes = (await this.ask('Bỏ ván đang chơi dở?', [{ label: 'Có', fill: DANGER_FILL }, { label: 'Không' }])) === 0;
         if (!yes || stale()) return;
-        void recordRun(runStatsOf(save));
+        endRun(runStatsOf(save));
         void manager.end(save.runId);
         this.enter(manager, account, { kind: 'new' });
         return true;
       });
-      if (primary) mainBtn(y, 'Ván mới', onClick);
-      else new Button(this, cx - 210, y, 420, 66, 'Ván mới', onClick, { fontSize: 28 });
+      if (primary) mainBtn('Ván mới', onClick);
+      else Button.at(this, L.secondary, 'Ván mới', onClick, { fontSize: 28 });
     };
 
     if (info.kind === 'resume') {
-      mainBtn(260, `Chơi tiếp — Wave ${info.save.game.wave}`, this.guarded(async () => {
+      mainBtn(`Chơi tiếp — Wave ${info.save.game.wave}`, this.guarded(async () => {
         this.enter(manager, account, { kind: 'resume', save: info.save });
         return true;
       }));
-      newGameBtn(352, false, info.save);
+      newGameBtn(false, info.save);
     } else if (info.kind === 'elsewhere') {
       this.add
-        .text(cx, 262, `Ván đang được chơi ở thiết bị khác (wave ${info.save.game.wave})`, {
-          fontFamily: FONT, fontSize: '24px', color: COLORS.gold, align: 'center', wordWrap: { width: GAME_W - 200 },
-        })
+        .text(cx, L.noticeY, `Ván đang được chơi ở thiết bị khác (wave ${info.save.game.wave})`, textStyle({
+          size: 24, color: COLORS.gold, align: 'center', wrap: GAME_W - 200,
+        }))
         .setOrigin(0.5);
-      newGameBtn(310, true, info.save);
+      newGameBtn(true, info.save);
     } else {
-      mainBtn(280, 'Chơi', this.guarded(async () => {
+      mainBtn('Chơi', this.guarded(async () => {
         this.enter(manager, account, { kind: 'new' });
         return true;
       }));
     }
 
+    // Kỷ lục cá nhân; lần đầu (chưa có kỷ lục, chưa có ván dở) thì một dòng gợi ý (spec mục 8).
+    const best = readBest(browserStore());
+    if (best && best.wave >= 1) {
+      this.add
+        .text(cx, L.recordY, `Kỷ lục: Wave ${best.wave}${best.won ? ' · Thắng' : ''}`, textStyle({ size: 22, color: COLORS.text }))
+        .setOrigin(0.5);
+    } else if (!best && info.kind === 'none') {
+      this.add
+        .text(cx, L.hintY, 'Triệu hồi nhân vật, kéo hai nhân vật giống nhau để gộp, chặn quái đến cửa Ra.', textStyle({
+          size: 22, color: COLORS.muted, align: 'center', wrap: GAME_W - 200,
+        }))
+        .setOrigin(0.5);
+    }
+
     if (!authAvailable()) return;
     if (account) {
       this.add
-        .text(cx, 520, `Đã đăng nhập: ${account.name}`, { fontFamily: FONT, fontSize: '22px', color: COLORS.text })
+        .text(cx, L.accountY, `Đã đăng nhập: ${account.name}`, textStyle({ size: 22, color: COLORS.text }))
         .setOrigin(0.5);
-      new Button(this, cx - 130, 556, 260, 56, 'Đăng xuất', this.guarded(async () => {
+      Button.at(this, L.signOut, 'Đăng xuất', this.guarded(async () => {
         await signOut();
         if (stale()) return;
         this.scene.restart();
@@ -226,10 +249,10 @@ export class StartScene extends Phaser.Scene {
       }), { fontSize: 22 });
     } else {
       this.add
-        .text(cx, 506, 'Đăng nhập để chơi tiếp trên thiết bị khác', { fontFamily: FONT, fontSize: '18px', color: COLORS.muted })
+        .text(cx, L.accountY, 'Đăng nhập để chơi tiếp trên thiết bị khác', textStyle({ size: 22, color: COLORS.muted }))
         .setOrigin(0.5);
       PROVIDERS.forEach((p, i) => {
-        new Button(this, cx - 180, 534 + i * 64, 360, 56, PROVIDER_LABEL[p], this.guarded(async () => {
+        Button.at(this, startProvider(i), PROVIDER_LABEL[p], this.guarded(async () => {
           const started = await signIn(p);
           if (stale()) return;
           if (started) return true; // trình duyệt đang chuyển trang
@@ -266,23 +289,21 @@ export class StartScene extends Phaser.Scene {
   private ask(title: string, choices: Choice[]): Promise<number> {
     return new Promise((resolve) => {
       const cx = GAME_W / 2;
-      const w = 560;
-      const h = 150 + choices.length * 76;
-      const top = (GAME_H - h) / 2;
+      const a = askLayout(choices.length);
       const objs: Phaser.GameObjects.GameObject[] = [];
       objs.push(this.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.75).setOrigin(0).setDepth(MODAL_DEPTH).setInteractive());
       objs.push(
-        this.add.rectangle(cx - w / 2, top, w, h, COLORS.bar).setOrigin(0).setDepth(MODAL_DEPTH + 1).setStrokeStyle(2, 0x5b6585),
+        this.add.rectangle(a.box.x, a.box.y, a.box.w, a.box.h, COLORS.bar).setOrigin(0).setDepth(MODAL_DEPTH + 1).setStrokeStyle(2, 0x5b6585),
       );
       objs.push(
         this.add
-          .text(cx, top + 50, title, { fontFamily: FONT, fontSize: '30px', fontStyle: 'bold', color: '#ffffff', align: 'center' })
+          .text(cx, a.titleY, title, textStyle({ size: 30, bold: true, color: '#ffffff', align: 'center' }))
           .setOrigin(0.5).setDepth(MODAL_DEPTH + 2),
       );
       let done = false;
       const buttons = choices.map(
         (c, i) =>
-          new Button(this, cx - (w - 60) / 2, top + 100 + i * 76, w - 60, 64, c.label, () => {
+          Button.at(this, a.choices[i], c.label, () => {
             if (done) return;
             done = true;
             for (const o of objs) o.destroy();

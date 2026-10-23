@@ -1,15 +1,18 @@
 import Phaser from 'phaser';
 import { applyCard, discardCard } from '../sim/commands';
 import type { Card, CommandResult, GameState } from '../sim/types';
+import { motion } from '../settings/motion';
 import { Button } from './BottomBar';
-import { cardLabel, COLORS, FONT, GAME_H, GAME_W, RARITY_COLOR, RARITY_NAME } from './theme';
+import { LAYOUT } from './layout';
+import { cardLabel, COLORS, RARITY_COLOR, RARITY_NAME, textStyle } from './theme';
 
-const CARD_W = 150;
-const CARD_H = 100;
-const GAP = 10;
-const MAX_CARDS = 5;
-const Y = GAME_H - CARD_H - 8;
+const H = LAYOUT.hand;
+const CARD_W = H.cardW;
+const CARD_H = H.cardH;
+const MAX_CARDS = H.maxCards;
 const DRAG_THRESHOLD = 8;
+const FLASH_BLINK_MS = 900;
+const FLASH_STATIC_MS = 600;
 
 interface Slot {
   bg: Phaser.GameObjects.Rectangle;
@@ -25,7 +28,6 @@ export class Hand {
   private press: { cardId: number; x: number; y: number; moving: boolean } | null = null;
   private ghost: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null = null;
   private flashUntil = new Map<number, number>();
-  private x0 = (GAME_W - (MAX_CARDS * CARD_W + (MAX_CARDS - 1) * GAP)) / 2;
 
   constructor(
     private scene: Phaser.Scene,
@@ -34,27 +36,28 @@ export class Hand {
     private slotAt: (x: number, y: number) => number,
   ) {
     for (let i = 0; i < MAX_CARDS; i++) {
-      const x = this.x0 + i * (CARD_W + GAP);
+      const { x, y: Y } = H.cards[i].rect;
       const bg = scene.add.rectangle(x, Y, CARD_W, CARD_H, 0x252a3a).setOrigin(0).setDepth(110).setStrokeStyle(4, 0x9e9e9e)
         .setInteractive({ useHandCursor: true });
       const label = scene.add
-        .text(x + CARD_W / 2, Y + CARD_H / 2 + 6, '', {
-          fontFamily: FONT, fontSize: '20px', color: COLORS.text, fontStyle: 'bold', align: 'center', wordWrap: { width: CARD_W - 16 },
-        })
+        .text(x + CARD_W / 2, Y + H.labelDy, '', textStyle({
+          size: 22, color: COLORS.text, bold: true, align: 'center', wrap: CARD_W - 16, extra: { lineSpacing: -4 },
+        }))
         .setOrigin(0.5).setDepth(111);
-      const rarity = scene.add.text(x + 8, Y + 6, '', { fontFamily: FONT, fontSize: '13px', color: COLORS.muted }).setDepth(111);
+      const rarity = scene.add.text(x + 8, Y + H.rarityDy, '', textStyle({ size: 22, color: COLORS.muted })).setDepth(111);
       const slot: Slot = { bg, label, rarity, cardId: null };
       bg.on('pointerdown', (p: Phaser.Input.Pointer) => {
         if (slot.cardId !== null) this.press = { cardId: slot.cardId, x: p.x, y: p.y, moving: false };
       });
       this.slots.push(slot);
     }
-    this.discardBtn = new Button(scene, 0, 0, 56, 56, 'Bỏ', () => {
+    // Nút bỏ thẻ cố định bên phải hàng thẻ (không đè chữ của thẻ đang chọn).
+    this.discardBtn = Button.at(scene, H.discard, 'Bỏ thẻ', () => {
       if (this.selectedId !== null) {
         this.act(discardCard(this.getState(), this.selectedId));
         this.selectedId = null;
       }
-    }, { depth: 130, fill: 0x7a2e2e, fontSize: 18 });
+    }, { depth: 130, fill: 0x7a2e2e, fontSize: 22 });
     this.discardBtn.setVisible(false);
 
     scene.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
@@ -68,7 +71,8 @@ export class Hand {
   }
 
   flash(cardId: number): void {
-    this.flashUntil.set(cardId, this.scene.time.now + 900);
+    // Giảm chuyển động: viền sáng tĩnh 600 ms thay cho nhấp nháy 900 ms.
+    this.flashUntil.set(cardId, this.scene.time.now + (motion.reduced ? FLASH_STATIC_MS : FLASH_BLINK_MS));
   }
 
   reset(): void {
@@ -101,9 +105,9 @@ export class Hand {
       if (!card) return;
       const bg = this.scene.add.rectangle(p.x, p.y, CARD_W, CARD_H, 0x252a3a, 0.9).setDepth(250).setStrokeStyle(4, RARITY_COLOR[card.rarity]);
       const label = this.scene.add
-        .text(p.x, p.y, cardLabel(card.stat, this.getState().config.cards.values[card.stat][card.rarity]), {
-          fontFamily: FONT, fontSize: '20px', color: COLORS.text, fontStyle: 'bold', align: 'center', wordWrap: { width: CARD_W - 16 },
-        })
+        .text(p.x, p.y, cardLabel(card.stat, this.getState().config.cards.values[card.stat][card.rarity]), textStyle({
+          size: 22, color: COLORS.text, bold: true, align: 'center', wrap: CARD_W - 16, extra: { lineSpacing: -4 },
+        }))
         .setOrigin(0.5).setDepth(251);
       this.ghost = { bg, label };
     }
@@ -113,8 +117,8 @@ export class Hand {
     }
   }
 
-  /** Thả ngoài canvas: kết thúc nhấn/kéo, không thả vào đâu. */
-  private cancelPress(): void {
+  /** Kết thúc nhấn/kéo đang dở, không thả vào đâu (thả ngoài canvas, tạm dừng, lớp phủ xoay). */
+  cancelPress(): void {
     this.press = null;
     this.clearGhost();
   }
@@ -145,20 +149,17 @@ export class Hand {
       sl.rarity.setVisible(show);
       if (!card) continue;
       const selected = card.id === this.selectedId;
-      const lift = selected ? 10 : 0;
-      const x = this.x0 + i * (CARD_W + GAP);
+      const lift = selected ? H.lift : 0;
+      const { x, y: Y } = H.cards[i].rect;
       const flashing = (this.flashUntil.get(card.id) ?? 0) > now;
-      const blink = flashing ? 0.5 + 0.5 * Math.sin(now / 60) : 0;
+      const calm = motion.reduced;
+      const blink = flashing && !calm ? 0.5 + 0.5 * Math.sin(now / 60) : 0;
       sl.bg.setPosition(x, Y - lift);
-      sl.bg.setFillStyle(flashing ? 0x6a6a3a : selected ? 0x363d57 : 0x252a3a, 1);
-      sl.bg.setStrokeStyle(selected || flashing ? 6 : 4, flashing && blink > 0.5 ? COLORS.highlight : RARITY_COLOR[card.rarity]);
-      sl.label.setPosition(x + CARD_W / 2, Y + CARD_H / 2 + 8 - lift)
+      sl.bg.setFillStyle(flashing && !calm ? 0x6a6a3a : selected ? 0x363d57 : 0x252a3a, 1);
+      sl.bg.setStrokeStyle(selected || flashing ? 6 : 4, flashing && (calm || blink > 0.5) ? COLORS.highlight : RARITY_COLOR[card.rarity]);
+      sl.label.setPosition(x + CARD_W / 2, Y + H.labelDy - lift)
         .setText(cardLabel(card.stat, s.config.cards.values[card.stat][card.rarity]));
-      sl.rarity.setPosition(x + 8, Y + 6 - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));
-      if (selected) {
-        this.discardBtn.bg.setPosition(x + CARD_W - 56, Y - lift);
-        this.discardBtn.label.setPosition(x + CARD_W - 28, Y - lift + 28);
-      }
+      sl.rarity.setPosition(x + 8, Y + H.rarityDy - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));
     }
     this.discardBtn.setVisible(this.selectedId !== null);
   }

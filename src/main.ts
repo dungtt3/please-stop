@@ -3,8 +3,10 @@ import { GameScene } from './scenes/GameScene';
 import { StartScene } from './scenes/StartScene';
 import { refreshCloudCache } from './net/cloudCache';
 import { installAudioUnlock } from './audio/sfx';
+import { installOrientationOverlay } from './ui/orientation';
 
 installAudioUnlock();
+installOrientationOverlay();
 
 async function boot(): Promise<void> {
   try {

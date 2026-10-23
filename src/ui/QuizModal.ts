@@ -2,12 +2,10 @@ import Phaser from 'phaser';
 import { answerQuiz, closeQuiz, quizReward } from '../sim/quiz';
 import type { CommandResult, GameState } from '../sim/types';
 import { Button } from './BottomBar';
-import { COLORS, FONT, GAME_H, GAME_W } from './theme';
+import { LAYOUT } from './layout';
+import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 
-const PW = 760;
-const PH = 440;
-const PX = (GAME_W - PW) / 2;
-const PY = 110;
+const { x: PX, y: PY, w: PW, h: PH } = LAYOUT.quiz.box;
 const CLOSE_DELAY = 1200;
 
 export class QuizModal {
@@ -25,21 +23,17 @@ export class QuizModal {
     this.shade = scene.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.45).setOrigin(0).setDepth(400).setInteractive();
     this.panel = scene.add.rectangle(PX, PY, PW, PH, COLORS.bar).setOrigin(0).setDepth(401).setStrokeStyle(4, 0x5b6585);
     this.question = scene.add
-      .text(GAME_W / 2, PY + 70, '', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: COLORS.text })
+      .text(GAME_W / 2, PY + 70, '', textStyle({ size: 64, bold: true, color: COLORS.text }))
       .setOrigin(0.5).setDepth(402);
     this.barBack = scene.add.rectangle(PX + 30, PY + 125, PW - 60, 16, 0x000000, 0.6).setOrigin(0).setDepth(402);
     this.bar = scene.add.rectangle(PX + 30, PY + 125, PW - 60, 16, 0x42a5f5).setOrigin(0).setDepth(403);
-    const bw = 340;
-    const bh = 90;
     for (let i = 0; i < 4; i++) {
-      const x = PX + 30 + (i % 2) * (bw + 20);
-      const y = PY + 165 + Math.floor(i / 2) * (bh + 14);
       this.buttons.push(
-        new Button(scene, x, y, bw, bh, '', () => act(answerQuiz(this.getState(), i)), { depth: 402, fontSize: 40 }),
+        Button.at(scene, LAYOUT.quiz.answers[i], '', () => act(answerQuiz(this.getState(), i)), { depth: 402, fontSize: 40 }),
       );
     }
     this.result = scene.add
-      .text(GAME_W / 2, PY + PH - 26, '', { fontFamily: FONT, fontSize: '26px', fontStyle: 'bold', color: COLORS.text })
+      .text(GAME_W / 2, PY + PH - 26, '', textStyle({ size: 26, bold: true, color: COLORS.text }))
       .setOrigin(0.5).setDepth(402);
     this.setVisible(false);
   }

@@ -7,10 +7,13 @@ import { COLORS } from '../ui/theme';
 import { applyEntry } from './applyEntry';
 import type { VisualRegistry } from './loader';
 import type { VisualKey } from './manifest';
+import { fxDuration, motion, REDUCED_FX_MAX_MS } from '../settings/motion';
 
 export const MAX_PROJECTILES = 60;
 export const PROJECTILE_FLIGHT_S = 0.15;
 export const SKILL_FX_MAX_S = 0.6;
+/** Giảm chuyển động: đạn bay ngắn hơn để đạn + trúng đích vẫn ≤ REDUCED_FX_MAX_MS (200 ms). */
+export const REDUCED_FLIGHT_MS = 80;
 
 /** Trên quái (12) và lính (13), dưới con trỏ kéo (30), chữ nổi (50), UI (100+) và popup (450). */
 export const FX_DEPTH = 20;
@@ -113,6 +116,9 @@ class Fx {
 
 const NOOP = (): void => undefined;
 const ms = (s: number): number => Math.round(s * 1000);
+/** Trần thời lượng còn lại của hiệu ứng (ms) khi giảm chuyển động; null = không giới hạn. */
+type Cap = number | null;
+const lim = (baseMs: number, cap: Cap): number => (cap === null ? baseMs : fxDuration(baseMs, true, cap));
 
 type AttackEvent = Extract<GameEvent, { type: 'attack' }>;
 type SkillEvent = Extract<GameEvent, { type: 'skill' }>;
@@ -132,6 +138,8 @@ export class Effects {
     private readonly tileSize: () => number,
     /** Bán kính nổ lan của đòn thường pháp sư (ô); đọc mỗi lần vì cấu hình đổi theo ván. */
     private readonly splashRadius: () => number = () => DEFAULT_SPLASH,
+    /** Đọc đúng lúc hiệu ứng bắt đầu để đổi cài đặt có tác dụng ngay. */
+    private readonly isReduced: () => boolean = () => motion.reduced,
   ) {}
 
   /** Số đạn/hiệu ứng đang giữ suất (cho kiểm tra). */
@@ -172,10 +180,10 @@ export class Effects {
   }
 
   /** Sprite chạy một lần tại chỗ; hiệu ứng giữ tới hết hoạt ảnh (tối đa `maxS`). Trả về false nếu không có sprite. */
-  private spriteFx(fx: Fx, key: VisualKey, x: number, y: number, depth: number, maxS: number): boolean {
+  private spriteFx(fx: Fx, key: VisualKey, x: number, y: number, depth: number, maxS: number, cap: Cap = null): boolean {
     const s = this.makeSprite(fx, key, x, y, depth, true);
     if (!s) return false;
-    const dur = Math.min(s.anims.currentAnim?.duration ?? DEFAULT_SPRITE_MS, ms(maxS));
+    const dur = lim(Math.min(s.anims.currentAnim?.duration ?? DEFAULT_SPRITE_MS, ms(maxS)), cap);
     fx.tween({ targets: s, alpha: { from: 1, to: 1 }, duration: Math.max(1, dur) });
     return true;
   }
@@ -204,12 +212,14 @@ export class Effects {
     const a = this.toScreen(e.from);
     const b = this.toScreen(e.to);
     const cls = e.classId;
-    const land = (): void => this.impact(fx, cls, b.x, b.y, e.crit, t);
+    const red = this.isReduced();
+    const flight = red ? REDUCED_FLIGHT_MS : ms(PROJECTILE_FLIGHT_S);
+    const land = (flown: number): void => this.impact(fx, cls, b.x, b.y, e.crit, t, red ? REDUCED_FX_MAX_MS - flown : null);
 
     // Kiếm sĩ/lính đánh gần: vệt chém tại mục tiêu, chỉ bay khi có sprite đạn riêng.
     const ranged = cls === 'archer' || cls === 'mage' || cls === 'summoner';
     if (!ranged && !this.visuals.has(projectileKey(cls))) {
-      land();
+      land(0);
       return;
     }
     const ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -218,10 +228,10 @@ export class Effects {
       targets: proj,
       x: b.x,
       y: b.y,
-      duration: ms(PROJECTILE_FLIGHT_S),
+      duration: flight,
       onDone: () => {
         proj.destroy();
-        land();
+        land(flight);
       },
     });
   }
@@ -240,22 +250,22 @@ export class Effects {
     return this.disc(fx, x, y, t * (cls === 'mage' ? 0.14 : 0.09) * k, color, 1, FX_DEPTH);
   }
 
-  private impact(fx: Fx, cls: ClassId | 'minion', x: number, y: number, crit: boolean, t: number): void {
+  private impact(fx: Fx, cls: ClassId | 'minion', x: number, y: number, crit: boolean, t: number, cap: Cap): void {
     const color = crit ? CRIT_COLOR : FX_COLOR[cls];
     const k = crit ? CRIT_SCALE : 1;
-    if (!this.spriteFx(fx, impactKey(cls), x, y, FX_DEPTH + 1, SKILL_FX_MAX_S)) {
+    if (!this.spriteFx(fx, impactKey(cls), x, y, FX_DEPTH + 1, SKILL_FX_MAX_S, cap)) {
       if (cls === 'mage') {
-        this.burst(fx, x, y, this.splashRadius() * t, color, 0.3, 0.3, 1, 250, FX_DEPTH + 1);
+        this.burst(fx, x, y, this.splashRadius() * t, color, 0.3, 0.3, 1, lim(250, cap), FX_DEPTH + 1);
       } else if (cls === 'swordsman' || cls === 'minion') {
         const small = cls === 'minion' ? 0.5 : 1;
         const slash = this.rect(fx, x, y, t * 0.8 * small * k, (cls === 'minion' ? 3 : 4) * k, color, FX_DEPTH + 1).setRotation(-0.8).setScale(0.2, 1);
-        fx.tween({ targets: slash, scaleX: 1, alpha: 0, duration: ms(PROJECTILE_FLIGHT_S), ease: 'Quad.easeOut' });
+        fx.tween({ targets: slash, scaleX: 1, alpha: 0, duration: lim(ms(PROJECTILE_FLIGHT_S), cap), ease: 'Quad.easeOut' });
       } else {
-        this.burst(fx, x, y, t * 0.12 * k, color, 0.5, 1, 2.2, 120, FX_DEPTH + 1);
+        this.burst(fx, x, y, t * 0.12 * k, color, 0.5, 1, 2.2, lim(120, cap), FX_DEPTH + 1);
       }
     }
-    if (crit && !this.spriteFx(fx, 'impact.crit', x, y, FX_DEPTH + 2, SKILL_FX_MAX_S)) {
-      this.burst(fx, x, y, t * 0.35, CRIT_COLOR, 0.6, 0.3, 1.4, 200, FX_DEPTH + 2);
+    if (crit && !this.spriteFx(fx, 'impact.crit', x, y, FX_DEPTH + 2, SKILL_FX_MAX_S, cap)) {
+      this.burst(fx, x, y, t * 0.35, CRIT_COLOR, 0.6, 0.3, 1.4, lim(200, cap), FX_DEPTH + 2);
     }
   }
 
@@ -264,35 +274,39 @@ export class Effects {
   private skill(e: SkillEvent): void {
     const t = this.tileSize();
     const p = this.toScreen(e.pos);
+    const cap: Cap = this.isReduced() ? REDUCED_FX_MAX_MS : null;
     switch (e.skill) {
       case 'swordsman':
-        this.swordsmanSkill(p, (e.range ?? 1.5) * t);
+        this.swordsmanSkill(p, (e.range ?? 1.5) * t, cap);
         break;
       case 'archer':
-        this.archerSkill(p, (e.hits ?? []).map((h) => this.toScreen(h)), t);
+        this.archerSkill(p, (e.hits ?? []).map((h) => this.toScreen(h)), t, cap);
         break;
       case 'mage':
-        this.mageSkill(this.toScreen(e.center ?? e.pos), (e.radius ?? 1) * t, t);
+        this.mageSkill(this.toScreen(e.center ?? e.pos), (e.radius ?? 1) * t, t, cap);
         break;
       case 'summoner':
-        this.summonerSkill((e.spawns?.length ? e.spawns : [e.pos]).map((s) => this.toScreen(s)), t);
+        this.summonerSkill((e.spawns?.length ? e.spawns : [e.pos]).map((s) => this.toScreen(s)), t, cap);
         break;
     }
   }
 
-  private swordsmanSkill(p: { x: number; y: number }, r: number): void {
+  private swordsmanSkill(p: { x: number; y: number }, r: number, cap: Cap): void {
     const fx = this.newFx(null);
-    if (this.spriteFx(fx, 'skill.swordsman', p.x, p.y, FX_DEPTH + 1, SKILL_FX_MAX_S)) return;
-    const dur = 450;
+    if (this.spriteFx(fx, 'skill.swordsman', p.x, p.y, FX_DEPTH + 1, SKILL_FX_MAX_S, cap)) return;
+    const dur = lim(450, cap);
     this.burst(fx, p.x, p.y, r, FX_COLOR.swordsman, 0.15, 0.4, 1, dur, FX_DEPTH + 1);
     const blade = this.rect(fx, p.x, p.y, r, 5, 0xffffff, FX_DEPTH + 2).setOrigin(0, 0.5);
-    fx.tween({ targets: blade, rotation: Math.PI * 2, alpha: 0.2, duration: dur, ease: 'Sine.easeInOut' });
+    // Giảm chuyển động: lưỡi kiếm không xoay, chỉ mờ đi.
+    fx.tween({ targets: blade, ...(cap === null ? { rotation: Math.PI * 2 } : {}), alpha: 0.2, duration: dur, ease: 'Sine.easeInOut' });
   }
 
-  private archerSkill(p: { x: number; y: number }, hits: { x: number; y: number }[], t: number): void {
+  private archerSkill(p: { x: number; y: number }, hits: { x: number; y: number }[], t: number, cap: Cap): void {
     const flourish = this.newFx(null);
-    if (!this.spriteFx(flourish, 'skill.archer', p.x, p.y, FX_DEPTH + 1, SKILL_FX_MAX_S)) flourish.finish();
-    const fall = 180;
+    if (!this.spriteFx(flourish, 'skill.archer', p.x, p.y, FX_DEPTH + 1, SKILL_FX_MAX_S, cap)) flourish.finish();
+    // Giảm chuyển động: mũi tên rơi 80 ms rồi nổ 120 ms, không so le → tổng 200 ms.
+    const fall = cap === null ? 180 : REDUCED_FLIGHT_MS;
+    const left: Cap = cap === null ? null : cap - fall;
     hits.forEach((h, i) => {
       const lease = this.budget.lease();
       if (!lease) return;
@@ -312,25 +326,26 @@ export class Effects {
         targets: arrow,
         y: h.y,
         duration: fall,
-        delay: Math.min(i * 40, 200),
+        delay: cap === null ? Math.min(i * 40, 200) : 0,
         ease: 'Quad.easeIn',
         onStart: () => arrow.setVisible(true),
         onDone: () => {
           arrow.destroy();
-          this.burst(fx, h.x, h.y, t * 0.18, FX_COLOR.archer, 0.5, 1, 2, 120, FX_DEPTH + 1);
+          this.burst(fx, h.x, h.y, t * 0.18, FX_COLOR.archer, 0.5, 1, 2, lim(120, left), FX_DEPTH + 1);
         },
       });
     });
   }
 
-  private mageSkill(c: { x: number; y: number }, r: number, t: number): void {
+  private mageSkill(c: { x: number; y: number }, r: number, t: number, cap: Cap): void {
     const fx = this.newFx(null);
-    const fall = 300;
+    const fall = cap === null ? 300 : REDUCED_FLIGHT_MS;
+    const left: Cap = cap === null ? null : cap - fall;
     const sx = c.x + t * 1.5;
     const sy = c.y - t * 3;
     const blast = (): void => {
-      if (this.spriteFx(fx, 'skill.mage', c.x, c.y, FX_DEPTH + 1, 0.3)) return;
-      this.burst(fx, c.x, c.y, r, FX_COLOR.mage, 0.45, 0.2, 1, 300, FX_DEPTH + 1);
+      if (this.spriteFx(fx, 'skill.mage', c.x, c.y, FX_DEPTH + 1, 0.3, left)) return;
+      this.burst(fx, c.x, c.y, r, FX_COLOR.mage, 0.45, 0.2, 1, lim(300, left), FX_DEPTH + 1);
     };
     const meteor: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite =
       this.makeSprite(fx, 'skill.mage.meteor', sx, sy, FX_DEPTH + 1, false) ?? this.disc(fx, sx, sy, t * 0.22, FX_COLOR.mage, 1, FX_DEPTH + 1);
@@ -347,11 +362,11 @@ export class Effects {
     });
   }
 
-  private summonerSkill(spawns: { x: number; y: number }[], t: number): void {
+  private summonerSkill(spawns: { x: number; y: number }[], t: number, cap: Cap): void {
     const fx = this.newFx(null);
     for (const s of spawns) {
-      if (this.spriteFx(fx, 'skill.summoner', s.x, s.y, FX_DEPTH + 1, SKILL_FX_MAX_S)) continue;
-      this.burst(fx, s.x, s.y, t * 0.5, FX_COLOR.summoner, 0.25, 0.3, 1, 450, FX_DEPTH + 1);
+      if (this.spriteFx(fx, 'skill.summoner', s.x, s.y, FX_DEPTH + 1, SKILL_FX_MAX_S, cap)) continue;
+      this.burst(fx, s.x, s.y, t * 0.5, FX_COLOR.summoner, 0.25, 0.3, 1, lim(450, cap), FX_DEPTH + 1);
     }
     if (spawns.length === 0) fx.finish();
   }

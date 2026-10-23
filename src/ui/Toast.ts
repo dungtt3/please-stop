@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { CommandResult } from '../sim/types';
-import { COLORS, FONT, GAME_H, GAME_W, BOTTOM_H } from './theme';
+import { COLORS, GAME_H, GAME_W, BOTTOM_H, textStyle } from './theme';
 
 const REASON_TEXT: Record<string, string> = {
   gold: 'Không đủ vàng',
@@ -16,9 +16,9 @@ export class Toast {
 
   constructor(private scene: Phaser.Scene) {
     this.text = scene.add
-      .text(GAME_W / 2, GAME_H - BOTTOM_H - 18, '', {
-        fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#000000cc', padding: { x: 16, y: 8 },
-      })
+      .text(GAME_W / 2, GAME_H - BOTTOM_H - 18, '', textStyle({
+        size: 22, color: COLORS.text, extra: { backgroundColor: '#000000cc', padding: { x: 16, y: 8 } },
+      }))
       .setOrigin(0.5, 1).setDepth(300).setAlpha(0);
   }
 
@@ -45,10 +45,9 @@ export class Banner {
 
   constructor(private scene: Phaser.Scene) {
     this.text = scene.add
-      .text(GAME_W / 2, 250, '', {
-        fontFamily: FONT, fontSize: '54px', color: '#ffffff', fontStyle: 'bold', align: 'center',
-        stroke: '#000000', strokeThickness: 6,
-      })
+      .text(GAME_W / 2, 250, '', textStyle({
+        size: 54, color: '#ffffff', bold: true, align: 'center', stroke: { color: '#000000', width: 6 },
+      }))
       .setOrigin(0.5).setDepth(350).setAlpha(0);
   }
 
