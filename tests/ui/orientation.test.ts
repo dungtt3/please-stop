@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blurActiveInput,
   getOrientation,
   installOrientationOverlay,
   onOrientation,
@@ -69,5 +70,73 @@ describe('without a window', () => {
     expect(c.blocked()).toBe(false);
     expect(getOrientation().blocked()).toBe(false);
     expect(() => c.onChange(() => undefined)()).not.toThrow();
+  });
+});
+
+describe('blurActiveInput', () => {
+  it('blurs an input but leaves other elements and missing docs alone', () => {
+    let blurred = 0;
+    blurActiveInput({ activeElement: { tagName: 'INPUT', blur: () => { blurred++; } } });
+    expect(blurred).toBe(1);
+    blurActiveInput({ activeElement: { tagName: 'BUTTON', blur: () => { blurred++; } } });
+    blurActiveInput({ activeElement: null });
+    blurActiveInput(undefined);
+    expect(blurred).toBe(1);
+    expect(() => blurActiveInput({ activeElement: { tagName: 'INPUT', blur: () => { throw new Error('x'); } } })).not.toThrow();
+  });
+});
+
+describe('overlay with a fake window', () => {
+  function fakeWin(w: number, h: number, activeTag = 'INPUT') {
+    const els: Array<{ id: string; dataset: Record<string, string>; [k: string]: unknown }> = [];
+    let blurs = 0;
+    const handlers: Record<string, Array<() => void>> = {};
+    const mk = () => ({
+      id: '', dataset: {} as Record<string, string>, textContent: '', innerHTML: '',
+      setAttribute: () => undefined, remove: () => undefined,
+    });
+    const doc = {
+      head: { appendChild: () => undefined },
+      body: { appendChild: (e: (typeof els)[number]) => { els.push(e); } },
+      createElement: () => mk(),
+      activeElement: { tagName: activeTag, blur: () => { blurs++; } },
+    };
+    const win = {
+      document: doc, innerWidth: w, innerHeight: h,
+      matchMedia: () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }),
+      addEventListener: (t: string, f: () => void) => { (handlers[t] ??= []).push(f); },
+      removeEventListener: () => undefined,
+    };
+    return {
+      win: win as unknown as Window, els, blurs: () => blurs,
+      resize: (nw: number, nh: number) => { win.innerWidth = nw; win.innerHeight = nh; for (const f of handlers.resize ?? []) f(); },
+    };
+  }
+
+  it('sets the calm flag from the motion setting and blurs the focused input when it blocks', () => {
+    const f = fakeWin(844, 390);
+    const ctl = installOrientationOverlay(f.win, () => true);
+    const overlay = f.els.find((e) => e.id === 'orientation-overlay')!;
+    expect(overlay.dataset.on).toBe('0');
+    expect(f.blurs()).toBe(0);
+    f.resize(390, 844);
+    expect(overlay.dataset.on).toBe('1');
+    expect(overlay.dataset.calm).toBe('1');
+    expect(f.blurs()).toBe(1);
+    ctl.dispose();
+  });
+
+  it('calm flag is off when motion is not reduced, and the setting is re-read each time it shows', () => {
+    const f = fakeWin(844, 390);
+    let reduced = false;
+    const ctl = installOrientationOverlay(f.win, () => reduced);
+    const overlay = f.els.find((e) => e.id === 'orientation-overlay')!;
+    f.resize(390, 844);
+    expect(overlay.dataset.calm).toBe('0');
+    f.resize(844, 390);
+    reduced = true;
+    f.resize(390, 844);
+    expect(overlay.dataset.calm).toBe('1');
+    ctl.dispose();
   });
 });

@@ -2,6 +2,8 @@
  * Nhắc xoay ngang trên điện thoại cầm dọc. Không phụ thuộc Phaser; an toàn khi chạy không có `window` (test node).
  * Lớp phủ chỉ gắn ở `src/main.ts` (trang game), không bao giờ ở `/admin`.
  */
+import { motion } from '../settings/motion';
+import { isEditableTarget } from './keys';
 
 /** Dưới ngưỡng này (CSS px) theo chiều nhỏ nhất thì coi là điện thoại; máy tính bảng không bị nhắc. */
 export const PHONE_MAX_SIDE = 600;
@@ -75,12 +77,22 @@ const CSS = `
 #${OVERLAY_ID}[data-on="1"]{display:flex}
 #${OVERLAY_ID} svg{width:96px;height:96px;transform-origin:50% 50%;animation:orient-rotate 2.4s ease-in-out infinite}
 @keyframes orient-rotate{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
-@media (prefers-reduced-motion: reduce){#${OVERLAY_ID} svg{animation:none;transform:rotate(-90deg)}}
+#${OVERLAY_ID}[data-calm="1"] svg{animation:none;transform:rotate(-90deg)}
 `;
 const ICON =
   '<svg viewBox="0 0 64 64" fill="none" stroke="#e8ebf5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<rect x="20" y="6" width="24" height="44" rx="4"/><line x1="29" y1="44" x2="35" y2="44"/>' +
   '<path d="M12 58 A24 24 0 0 0 52 58"/><polyline points="48 54 52 58 56 54"/></svg>';
+
+/** Ô nhập (ví dụ ô tên ở màn kết quả) đang giữ tiêu điểm thì bỏ tiêu điểm, để bàn phím ảo không nằm dưới lớp phủ. */
+export function blurActiveInput(doc: { activeElement?: unknown } | undefined): void {
+  try {
+    const a = doc?.activeElement as { blur?: () => void } | null | undefined;
+    if (a && isEditableTarget(a) && typeof a.blur === 'function') a.blur();
+  } catch {
+    /* không blur được thì thôi */
+  }
+}
 
 function readViewport(win: Window): Viewport {
   let coarse = false;
@@ -95,6 +107,7 @@ function readViewport(win: Window): Viewport {
 /** Gắn lớp phủ DOM "Xoay ngang điện thoại để chơi" và theo dõi hướng màn hình. */
 export function installOrientationOverlay(
   win: Window | undefined = typeof window === 'undefined' ? undefined : window,
+  calm: () => boolean = () => motion.reduced,
 ): OrientationController {
   const doc = win?.document;
   if (!win || !doc || !doc.body) return NOOP;
@@ -111,13 +124,19 @@ export function installOrientationOverlay(
 
   const listeners = new Set<(b: boolean) => void>();
   let state = shouldBlock(readViewport(win));
-  el.dataset.on = state ? '1' : '0';
+  /** Hiện lớp phủ: biểu tượng xoay đứng yên khi "Giảm chuyển động" (cài đặt của game, không chỉ media của máy). */
+  const show = (on: boolean): void => {
+    el.dataset.calm = calm() ? '1' : '0';
+    el.dataset.on = on ? '1' : '0';
+    if (on) blurActiveInput(doc);
+  };
+  show(state);
 
   const refresh = (): void => {
     const next = shouldBlock(readViewport(win));
     if (next === state) return;
     state = next;
-    el.dataset.on = next ? '1' : '0';
+    show(next);
     for (const cb of [...listeners]) cb(next);
   };
 
