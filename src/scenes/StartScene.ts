@@ -7,7 +7,7 @@ import { browserStore } from '../settings/configStore';
 import { runStatsOf, type RunSave } from '../sim/save';
 import { Button } from '../ui/BottomBar';
 import { Toast } from '../ui/Toast';
-import { COLORS, FONT, GAME_H, GAME_W } from '../ui/theme';
+import { COLORS, GAME_H, GAME_W, textStyle } from '../ui/theme';
 import { loadVisuals } from '../visuals/loader';
 import type { GameSceneData, GameStart } from './GameScene';
 
@@ -50,10 +50,10 @@ export class StartScene extends Phaser.Scene {
       window.removeEventListener('pageshow', onPageShow);
     });
     this.add
-      .text(GAME_W / 2, 130, 'Merge Defense', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: '#ffffff' })
+      .text(GAME_W / 2, 130, 'Merge Defense', textStyle({ size: 64, bold: true, color: '#ffffff' }))
       .setOrigin(0.5);
     const loading = this.add
-      .text(GAME_W / 2, 340, 'Đang tải…', { fontFamily: FONT, fontSize: '28px', color: COLORS.muted })
+      .text(GAME_W / 2, 340, 'Đang tải…', textStyle({ size: 28, color: COLORS.muted }))
       .setOrigin(0.5);
     this.toast = new Toast(this);
     // Asset sprite tải một lần cho cả trang, song song với phần tải bên dưới; không bao giờ ném lỗi,
@@ -201,9 +201,9 @@ export class StartScene extends Phaser.Scene {
       newGameBtn(352, false, info.save);
     } else if (info.kind === 'elsewhere') {
       this.add
-        .text(cx, 262, `Ván đang được chơi ở thiết bị khác (wave ${info.save.game.wave})`, {
-          fontFamily: FONT, fontSize: '24px', color: COLORS.gold, align: 'center', wordWrap: { width: GAME_W - 200 },
-        })
+        .text(cx, 262, `Ván đang được chơi ở thiết bị khác (wave ${info.save.game.wave})`, textStyle({
+          size: 24, color: COLORS.gold, align: 'center', wrap: GAME_W - 200,
+        }))
         .setOrigin(0.5);
       newGameBtn(310, true, info.save);
     } else {
@@ -216,7 +216,7 @@ export class StartScene extends Phaser.Scene {
     if (!authAvailable()) return;
     if (account) {
       this.add
-        .text(cx, 520, `Đã đăng nhập: ${account.name}`, { fontFamily: FONT, fontSize: '22px', color: COLORS.text })
+        .text(cx, 520, `Đã đăng nhập: ${account.name}`, textStyle({ size: 22, color: COLORS.text }))
         .setOrigin(0.5);
       new Button(this, cx - 130, 556, 260, 56, 'Đăng xuất', this.guarded(async () => {
         await signOut();
@@ -226,7 +226,7 @@ export class StartScene extends Phaser.Scene {
       }), { fontSize: 22 });
     } else {
       this.add
-        .text(cx, 506, 'Đăng nhập để chơi tiếp trên thiết bị khác', { fontFamily: FONT, fontSize: '18px', color: COLORS.muted })
+        .text(cx, 506, 'Đăng nhập để chơi tiếp trên thiết bị khác', textStyle({ size: 22, color: COLORS.muted }))
         .setOrigin(0.5);
       PROVIDERS.forEach((p, i) => {
         new Button(this, cx - 180, 534 + i * 64, 360, 56, PROVIDER_LABEL[p], this.guarded(async () => {
@@ -276,7 +276,7 @@ export class StartScene extends Phaser.Scene {
       );
       objs.push(
         this.add
-          .text(cx, top + 50, title, { fontFamily: FONT, fontSize: '30px', fontStyle: 'bold', color: '#ffffff', align: 'center' })
+          .text(cx, top + 50, title, textStyle({ size: 30, bold: true, color: '#ffffff', align: 'center' }))
           .setOrigin(0.5).setDepth(MODAL_DEPTH + 2),
       );
       let done = false;

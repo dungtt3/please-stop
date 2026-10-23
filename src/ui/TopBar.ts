@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { sfx } from '../audio/sfx';
 import type { GameState } from '../sim/types';
-import { COLORS, FONT, GAME_W, TOP_BAR_H } from './theme';
+import { formatNum } from '../visuals/viewMath';
+import { COLORS, GAME_W, TOP_BAR_H, textStyle } from './theme';
 
 export class TopBar {
   private hp: Phaser.GameObjects.Text;
@@ -14,17 +15,18 @@ export class TopBar {
   constructor(scene: Phaser.Scene, toggleSpeed: () => void, openMenu: () => void) {
     scene.add.rectangle(0, 0, GAME_W, TOP_BAR_H, COLORS.bar).setOrigin(0).setDepth(100);
     const mk = (x: number, size: number, color: string) =>
-      scene.add.text(x, TOP_BAR_H / 2, '', { fontFamily: FONT, fontSize: `${size}px`, color }).setOrigin(0, 0.5).setDepth(101);
+      scene.add.text(x, TOP_BAR_H / 2, '', textStyle({ size, color })).setOrigin(0, 0.5).setDepth(101);
     this.hp = mk(16, 24, COLORS.hp);
-    this.gold = mk(130, 24, COLORS.gold);
+    this.gold = mk(116, 24, COLORS.gold);
     this.wave = mk(270, 24, COLORS.text);
-    this.mod = mk(420, 16, COLORS.text);
-    this.mod.setWordWrapWidth(440);
-    this.timer = mk(870, 18, COLORS.text);
+    this.mod = mk(420, 22, COLORS.text);
+    this.mod.setWordWrapWidth(430);
+    this.mod.setLineSpacing(-4);
+    this.timer = mk(860, 22, COLORS.text);
     this.speedBtn = scene.add
-      .text(GAME_W - 16, TOP_BAR_H / 2, '', {
-        fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 16 },
-      })
+      .text(GAME_W - 16, TOP_BAR_H / 2, '', textStyle({
+        size: 22, color: COLORS.text, extra: { backgroundColor: '#2f3650', padding: { x: 12, y: 16 } },
+      }))
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
     this.speedBtn.on('pointerdown', () => {
       sfx.unlock();
@@ -33,9 +35,9 @@ export class TopBar {
     });
     this.speedBtn.setText('Tốc độ ×1');
     const gear = scene.add
-      .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', {
-        fontFamily: FONT, fontSize: '28px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 12 },
-      })
+      .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', textStyle({
+        size: 28, color: COLORS.text, extra: { backgroundColor: '#2f3650', padding: { x: 12, y: 12 } },
+      }))
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
     gear.on('pointerdown', () => {
       sfx.unlock();
@@ -46,7 +48,7 @@ export class TopBar {
 
   update(s: GameState, speed: 1 | 2): void {
     this.hp.setText(`❤ ${Math.max(0, Math.ceil(s.hp))}`);
-    this.gold.setText(`💰 ${Math.floor(s.gold)}`);
+    this.gold.setText(`💰 ${formatNum(Math.floor(s.gold))}`);
     this.wave.setText(`Wave ${s.wave}/${s.config.economy.totalWaves}`);
     if (s.modifier) {
       const m = s.config.modifiers[s.modifier];

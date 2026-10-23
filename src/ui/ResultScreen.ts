@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import type { GameState } from '../sim/types';
 import { Button } from './BottomBar';
-import { COLORS, FONT, GAME_H, GAME_W } from './theme';
+import { formatNum } from '../visuals/viewMath';
+import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 import { fetchTopScores, submitScore, type ScoreRow } from '../net/cloud';
 import { MAX_NAME, sanitizeName } from '../settings/sanitizeName';
 
@@ -48,20 +49,20 @@ export class ResultScreen {
   ) {
     this.shade = scene.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.8).setOrigin(0).setDepth(500).setInteractive();
     this.title = scene.add
-      .text(GAME_W / 2, 50, '', { fontFamily: FONT, fontSize: '52px', fontStyle: 'bold', color: '#ffffff' })
+      .text(GAME_W / 2, 50, '', textStyle({ size: 52, bold: true, color: '#ffffff' }))
       .setOrigin(0.5).setDepth(501);
     this.info = scene.add
-      .text(GAME_W / 2, 105, '', { fontFamily: FONT, fontSize: '24px', color: COLORS.text, align: 'center' })
+      .text(GAME_W / 2, 105, '', textStyle({ size: 24, color: COLORS.text, align: 'center' }))
       .setOrigin(0.5).setDepth(501);
     this.status = scene.add
-      .text(GAME_W / 2, 204, '', { fontFamily: FONT, fontSize: '18px', color: COLORS.muted })
+      .text(GAME_W / 2, 204, '', textStyle({ size: 22, color: COLORS.muted }))
       .setOrigin(0.5).setDepth(501);
     this.boardTitle = scene.add
-      .text(GAME_W / 2, 242, 'Bảng xếp hạng', { fontFamily: FONT, fontSize: '24px', fontStyle: 'bold', color: COLORS.gold })
+      .text(GAME_W / 2, 242, 'Bảng xếp hạng', textStyle({ size: 24, bold: true, color: COLORS.gold }))
       .setOrigin(0.5).setDepth(501);
     this.cols = [0, 1].map((i) =>
       scene.add
-        .text(i === 0 ? 70 : GAME_W / 2 + 30, 276, '', { fontFamily: 'Consolas, "Courier New", monospace', fontSize: '18px', color: COLORS.text, lineSpacing: 8 })
+        .text(i === 0 ? 70 : GAME_W / 2 + 30, 276, '', textStyle({ size: 22, mono: true, color: COLORS.text, extra: { lineSpacing: 2 } }))
         .setOrigin(0, 0).setDepth(501),
     );
     this.btn = new Button(scene, GAME_W / 2 - 270, 625, 260, 66, 'Chơi lại', restart, { depth: 501, fontSize: 28, fill: 0x2e7d32 });
@@ -168,7 +169,7 @@ export class ResultScreen {
       return;
     }
     const line = (r: ScoreRow, i: number): string =>
-      `${String(i + 1).padStart(2)}. ${r.name.padEnd(MAX_NAME)} W${String(r.wave_reached).padStart(2)} ${String(r.kills).padStart(4)}${r.won ? ' ✓' : ''}`;
+      `${String(i + 1).padStart(2)}. ${r.name.padEnd(MAX_NAME)} W${String(r.wave_reached).padStart(2)} ${formatNum(r.kills).padStart(7)}${r.won ? ' ✓' : ''}`;
     const lines = rows.map((r, i) => line({ ...r, name: sanitizeName(String(r.name)) }, i));
     this.cols[0].setText(lines.slice(0, COL_ROWS).join('\n'));
     this.cols[1].setText(lines.slice(COL_ROWS, COL_ROWS * 2).join('\n'));
@@ -208,7 +209,7 @@ export class ResultScreen {
         won: s.phase === 'won',
       };
       this.title.setText(s.phase === 'won' ? 'Chiến thắng!' : 'Thất bại').setColor(s.phase === 'won' ? '#ffd54f' : '#ef5350');
-      this.info.setText(`Wave đạt được: ${s.wave}/${s.config.economy.totalWaves}   ·   Quái đã giết: ${s.kills}`);
+      this.info.setText(`Wave đạt được: ${s.wave}/${s.config.economy.totalWaves}   ·   Quái đã giết: ${formatNum(s.kills)}`);
       this.setStatus('Nhập tên để lên bảng xếp hạng', COLORS.muted);
       this.cols[0].setText('Đang tải...');
       this.cols[1].setText('');

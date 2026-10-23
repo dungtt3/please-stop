@@ -25,7 +25,7 @@ import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
-import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
+import { BOTTOM_H, COLORS, GAME_H, GAME_W, MAP_LEFT, MAX_TILE, RARITY_COLOR, TOP_BAR_H, textStyle } from '../ui/theme';
 import { BossBar } from '../ui/BossBar';
 import { BoardViews } from '../visuals/BoardViews';
 import { Effects } from '../visuals/effects';
@@ -274,7 +274,7 @@ export class GameScene extends Phaser.Scene {
     const m = this.state.map;
     const availH = GAME_H - TOP_BAR_H - BOTTOM_H;
     this.tileSize = Math.max(16, Math.floor(Math.min(MAX_TILE, availH / m.rows, GAME_W / m.cols)));
-    this.originX = (GAME_W - m.cols * this.tileSize) / 2;
+    this.originX = MAP_LEFT;
     this.originY = TOP_BAR_H + (availH - m.rows * this.tileSize) / 2;
   }
 
@@ -303,7 +303,7 @@ export class GameScene extends Phaser.Scene {
     const label = (v: Vec, txt: string) => {
       const c = this.toScreen(tileCenter(v));
       this.staticTexts.push(
-        this.add.text(c.x, c.y, txt, { fontFamily: FONT, fontSize: '13px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(1),
+        this.add.text(c.x, c.y, txt, textStyle({ size: 14, color: '#ffffff', bold: true })).setOrigin(0.5).setDepth(1),
       );
     };
     label(first, 'Vào');
@@ -440,7 +440,7 @@ export class GameScene extends Phaser.Scene {
   private floatText(v: Vec, txt: string, color: string, size: number): void {
     const c = this.toScreen(v);
     const tx = this.add
-      .text(c.x + Phaser.Math.Between(-8, 8), c.y, txt, { fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 })
+      .text(c.x + Phaser.Math.Between(-8, 8), c.y, txt, textStyle({ size, color, bold: true, stroke: { color: '#000000', width: 3 } }))
       .setOrigin(0.5)
       .setDepth(50);
     this.tweens.add({ targets: tx, y: c.y - 36, alpha: 0, duration: 800, onComplete: () => tx.destroy() });
@@ -465,7 +465,7 @@ export class GameScene extends Phaser.Scene {
         this.floatText(e.pos, String(Math.round(e.amount)), e.crit ? COLORS.crit : '#ffffff', e.crit ? 22 : 14);
         break;
       case 'kill':
-        this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 16);
+        this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 18);
         sfx.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         break;
       case 'skill':

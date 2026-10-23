@@ -6,14 +6,14 @@ import { computeStats } from '../sim/units';
 import type { GameConfig } from '../config';
 import type { CardStat, ClassId, CommandResult, GameState, Unit } from '../sim/types';
 import { Button, BTN_H } from './BottomBar';
-import { CARD_STAT_NAME, COLORS, FONT, fmtCardValue, GAME_W, RARITY_COLOR, RARITY_NAME, TOP_BAR_H } from './theme';
+import { CARD_STAT_NAME, COLORS, fmtCardValue, GAME_W, MAP_LEFT, RARITY_COLOR, RARITY_NAME, TOP_BAR_H, textStyle } from './theme';
 
-const W = 208;
-const X = GAME_W - W - 4;
+const W = 400;
+const X = GAME_W - W - 8;
 const Y = TOP_BAR_H + 8;
 const PAD = 8;
 
-/** Bảng chi tiết ở lề phải bản đồ (không che ô nào). */
+/** Bảng chi tiết ở lề phải bản đồ (bản đồ dịch sang trái ở MAP_LEFT nên không che ô nào). */
 export class UnitPanel {
   private bg: Phaser.GameObjects.Rectangle;
   private title: Phaser.GameObjects.Text;
@@ -28,11 +28,11 @@ export class UnitPanel {
 
   constructor(scene: Phaser.Scene, private getState: () => GameState, act: (r: CommandResult) => void, private deselect: () => void) {
     this.bg = scene.add.rectangle(X, Y, W, 100, COLORS.bar, 0.96).setOrigin(0).setDepth(120).setStrokeStyle(3, 0x5b6585);
-    this.title = scene.add.text(X + PAD, Y + PAD, '', { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: COLORS.text }).setDepth(121);
+    this.title = scene.add.text(X + PAD, Y + PAD, '', textStyle({ size: 22, bold: true, color: COLORS.text })).setDepth(121);
     this.body = scene.add
-      .text(X + PAD, Y + 40, '', { fontFamily: FONT, fontSize: '14px', color: COLORS.text, lineSpacing: 4, wordWrap: { width: W - 2 * PAD } })
+      .text(X + PAD, Y + 40, '', textStyle({ size: 18, color: COLORS.text, wrap: W - 2 * PAD, extra: { lineSpacing: 2 } }))
       .setDepth(121);
-    this.cdLabel = scene.add.text(X + PAD, 0, '', { fontFamily: FONT, fontSize: '13px', color: COLORS.muted }).setDepth(121);
+    this.cdLabel = scene.add.text(X + PAD, 0, '', textStyle({ size: 18, color: COLORS.muted })).setDepth(121);
     this.cdBack = scene.add.rectangle(X + PAD, 0, W - 2 * PAD, 10, 0x000000, 0.6).setOrigin(0).setDepth(121);
     this.cdFill = scene.add.rectangle(X + PAD, 0, 0, 10, 0x42a5f5).setOrigin(0).setDepth(122);
     this.sellBtn = new Button(scene, X + PAD, 0, W - 2 * PAD, BTN_H, '', () => {
@@ -41,7 +41,7 @@ export class UnitPanel {
       if (!sel) return;
       act(sellUnit(s, sel.slot));
       this.deselect();
-    }, { depth: 121, fill: 0x7a4a1e, fontSize: 18 });
+    }, { depth: 121, fill: 0x7a4a1e, fontSize: 22 });
     this.setVisible(false);
   }
 
@@ -90,12 +90,12 @@ export class UnitPanel {
     this.body.setText(lines.join('\n'));
     const cd = activeCooldown(cfg, u.classId, u.level);
     const frac = cd > 0 ? Math.max(0, Math.min(1, 1 - u.skillCooldown / cd)) : 1;
-    let y = this.body.y + this.body.height + 8;
+    let y = this.body.y + this.body.height + 6;
     this.cdLabel.setPosition(X + PAD, y).setText(u.skillCooldown > 0 ? `Hồi chiêu: ${u.skillCooldown.toFixed(1)}s` : 'Kỹ năng sẵn sàng');
-    y += 18;
+    y += 24;
     this.cdBack.setPosition(X + PAD, y);
     this.cdFill.setPosition(X + PAD, y).setSize((W - 2 * PAD) * frac, 10);
-    y += 18;
+    y += 16;
     this.sellBtn.bg.setPosition(X + PAD, y);
     this.sellBtn.label.setPosition(X + W / 2, y + BTN_H / 2);
     this.sellBtn.setText(`Bán (+${Math.floor(u.goldInvested / 2)} vàng)`);

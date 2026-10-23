@@ -5,7 +5,7 @@ import { startWave } from '../sim/game';
 import { startQuiz } from '../sim/quiz';
 import { drawCost, luckCost, summonCost } from '../sim/units';
 import type { CommandResult, GameState } from '../sim/types';
-import { COLORS, FONT, GAME_H, GAME_W } from './theme';
+import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 
 export const BTN_H = 56;
 
@@ -29,9 +29,9 @@ export class Button {
     this.bg = scene.add.rectangle(x, y, w, h, opts.fill ?? 0x2f3650).setOrigin(0).setDepth(depth)
       .setStrokeStyle(2, 0x5b6585).setInteractive({ useHandCursor: true });
     this.label = scene.add
-      .text(x + w / 2, y + h / 2, text, {
-        fontFamily: FONT, fontSize: `${opts.fontSize ?? 20}px`, color: COLORS.text, align: 'center', wordWrap: { width: w - 12 },
-      })
+      .text(x + w / 2, y + h / 2, text, textStyle({
+        size: opts.fontSize ?? 22, color: COLORS.text, align: 'center', wrap: w - 12,
+      }))
       .setOrigin(0.5).setDepth(depth + 1);
     this.bg.on('pointerdown', () => {
       if (!this.bg.visible || !this.enabled) return;

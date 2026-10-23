@@ -2,7 +2,7 @@
 // Có sprite (manifest) thì dùng sprite + hoạt ảnh; không có thì vẽ hình khối như trước.
 import Phaser from 'phaser';
 import type { ClassId, Enemy, EnemyKind, Minion, Rarity, Unit } from '../sim/types';
-import { COLORS, FONT, RARITY_COLOR } from '../ui/theme';
+import { COLORS, RARITY_COLOR, textStyle } from '../ui/theme';
 import type { VisualRegistry } from './loader';
 import type { VisualKey } from './manifest';
 import { applyEntry } from './applyEntry';
@@ -153,7 +153,7 @@ export class UnitView {
     if (this.actor && v.has(`unit.${classId}.idle`)) this.frame.isFilled = false;
     this.cd = new Bar(scene, -sz / 2, tile / 2 - CD_H, sz, CD_H, CD_CHARGING);
     this.stars = scene.add
-      .text(-tile / 2 + 4, -tile / 2 + 3, '', { fontFamily: FONT, fontSize: '12px', color: '#fff176', fontStyle: 'bold' })
+      .text(-tile / 2 + 4, -tile / 2 + 3, '', textStyle({ size: 14, color: '#fff176', bold: true }))
       .setOrigin(0, 0);
     const parts: Phaser.GameObjects.GameObject[] = [this.frame];
     if (this.actor) parts.push(this.actor.sprite);
@@ -227,7 +227,7 @@ export class EnemyView {
     const barY = top - 2 - ENEMY_BAR_H;
     this.bar = new Bar(scene, -w / 2, barY, w, ENEMY_BAR_H, ENEMY_BAR_COLOR);
     this.hpText = scene.add
-      .text(0, barY - 1, '', { fontFamily: FONT, fontSize: '11px', color: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 })
+      .text(0, barY - 1, '', textStyle({ size: 14, color: '#ffffff', bold: true, stroke: { color: '#000000', width: 3 } }))
       .setOrigin(0.5, 1);
     const parts: Phaser.GameObjects.GameObject[] = [this.body];
     if (this.actor) parts.push(this.actor.sprite);

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { sfx } from '../audio/sfx';
 import { Button } from './BottomBar';
-import { COLORS, FONT, GAME_H, GAME_W } from './theme';
+import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 
 const DEPTH = 450; // trên mọi thứ trừ màn kết quả (500)
 const PANEL_W = 560;
@@ -106,7 +106,7 @@ export class PauseMenu {
     this.objs.push(s.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.75).setOrigin(0).setDepth(DEPTH).setInteractive());
     this.objs.push(s.add.rectangle(left, top, PANEL_W, PANEL_H, COLORS.bar).setOrigin(0).setDepth(DEPTH + 1).setStrokeStyle(2, 0x5b6585));
     this.objs.push(
-      s.add.text(cx, top + 46, 'Tạm dừng', { fontFamily: FONT, fontSize: '36px', fontStyle: 'bold', color: '#ffffff' })
+      s.add.text(cx, top + 46, 'Tạm dừng', textStyle({ size: 36, bold: true, color: '#ffffff' }))
         .setOrigin(0.5).setDepth(DEPTH + 2),
     );
     const btnOpts = (fill?: number) => ({ depth: DEPTH + 2, fontSize: 26, fill });
@@ -114,7 +114,7 @@ export class PauseMenu {
 
     // Hàng âm thanh
     this.objs.push(
-      s.add.text(left + 40, top + 196, 'Âm thanh', { fontFamily: FONT, fontSize: '26px', color: COLORS.text })
+      s.add.text(left + 40, top + 196, 'Âm thanh', textStyle({ size: 26, color: COLORS.text }))
         .setOrigin(0, 0.5).setDepth(DEPTH + 2),
     );
     this.soundBtn = new Button(s, left + PANEL_W - 40 - 140, top + 168, 140, 56, '', () => this.toggleSound(), { depth: DEPTH + 2, fontSize: 24 });
@@ -133,12 +133,12 @@ export class PauseMenu {
       this.dragging = true;
       this.setFromX(p.x);
     });
-    this.pct = s.add.text(left + PANEL_W - 40, ty, '', { fontFamily: FONT, fontSize: '24px', color: COLORS.text })
+    this.pct = s.add.text(left + PANEL_W - 40, ty, '', textStyle({ size: 24, color: COLORS.text }))
       .setOrigin(1, 0.5).setDepth(DEPTH + 2);
     this.objs.push(this.fill, this.knob, hit, this.pct);
 
     this.buttons.push(new Button(s, left + 40, top + 326, PANEL_W - 80, 64, 'Màn hình chính', () => this.onHome(), btnOpts()));
-    this.status = s.add.text(cx, top + 424, '', { fontFamily: FONT, fontSize: '22px', color: COLORS.muted })
+    this.status = s.add.text(cx, top + 424, '', textStyle({ size: 22, color: COLORS.muted }))
       .setOrigin(0.5).setDepth(DEPTH + 2);
     this.objs.push(this.status);
     this.refreshSound();
@@ -217,9 +217,9 @@ export class PauseMenu {
     this.confirmObjs.push(s.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.6).setOrigin(0).setDepth(d).setInteractive());
     this.confirmObjs.push(s.add.rectangle(cx - w / 2, top, w, h, COLORS.bar).setOrigin(0).setDepth(d + 1).setStrokeStyle(2, 0x5b6585));
     this.confirmObjs.push(
-      s.add.text(cx, top + 70, 'Thoát bây giờ sẽ bị tính thua. Thoát?', {
-        fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffffff', align: 'center', wordWrap: { width: w - 60 },
-      }).setOrigin(0.5).setDepth(d + 2),
+      s.add.text(cx, top + 70, 'Thoát bây giờ sẽ bị tính thua. Thoát?', textStyle({
+        size: 28, bold: true, color: '#ffffff', align: 'center', wrap: w - 60,
+      })).setOrigin(0.5).setDepth(d + 2),
     );
     const bw = (w - 60 - 16) / 2;
     this.confirmButtons.push(

@@ -5,6 +5,8 @@ export const GAME_H = 720;
 export const TOP_BAR_H = 64;
 export const BOTTOM_H = 176;
 export const MAX_TILE = 64;
+/** Lề trái của bản đồ; phần còn lại bên phải dành cho bảng chi tiết nhân vật. */
+export const MAP_LEFT = 16;
 
 export const FONT = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
 
@@ -51,4 +53,43 @@ export function fmtCardValue(stat: CardStat, v: number): string {
 
 export function cardLabel(stat: CardStat, v: number): string {
   return `${fmtCardValue(stat, v)} ${CARD_STAT_NAME[stat]}`;
+}
+
+export const MONO_FONT = 'Consolas, "Courier New", monospace';
+
+export interface TextStyleOpts {
+  size: number;
+  color?: string;
+  bold?: boolean;
+  align?: string;
+  /** Độ rộng xuống dòng (px khung game). */
+  wrap?: number;
+  stroke?: { color: string; width: number };
+  mono?: boolean;
+  /** Các trường style Phaser khác (lineSpacing, backgroundColor, padding...). */
+  extra?: Phaser.Types.GameObjects.Text.TextStyle;
+}
+
+/** Độ phân giải chữ: min(devicePixelRatio, 2), an toàn khi không có window. */
+export function textResolution(): number {
+  const dpr = typeof window !== 'undefined' && window ? window.devicePixelRatio : 1;
+  return Math.min(Math.max(dpr || 1, 1), 2);
+}
+
+/** Style chữ chung cho mọi Text của game. */
+export function textStyle(o: TextStyleOpts): Phaser.Types.GameObjects.Text.TextStyle {
+  const s: Phaser.Types.GameObjects.Text.TextStyle = {
+    fontFamily: o.mono ? MONO_FONT : FONT,
+    fontSize: `${o.size}px`,
+    resolution: textResolution(),
+  };
+  if (o.color !== undefined) s.color = o.color;
+  if (o.bold) s.fontStyle = 'bold';
+  if (o.align !== undefined) s.align = o.align;
+  if (o.wrap !== undefined) s.wordWrap = { width: o.wrap };
+  if (o.stroke) {
+    s.stroke = o.stroke.color;
+    s.strokeThickness = o.stroke.width;
+  }
+  return o.extra ? { ...s, ...o.extra } : s;
 }
