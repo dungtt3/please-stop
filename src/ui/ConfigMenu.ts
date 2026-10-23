@@ -9,6 +9,8 @@ export interface ConfigMenuOptions {
   /** Trả false nếu không lưu được. */
   onSave(cfg: GameConfig): boolean | void;
   onApplyAndRestart(cfg: GameConfig): void;
+  /** Ván đang chơi dở (chưa thắng/thua): áp dụng & chơi lại sẽ tính ván này là thua, nên hỏi xác nhận. */
+  runActive(): boolean;
   /** Xóa bản lưu; trả false nếu không xóa được. */
   onReset?(): boolean | void;
   onClose(): void;
@@ -52,6 +54,7 @@ const SECTIONS: { title: string; keys: string[] }[] = [
 ];
 
 const RESET_LABEL = 'Bỏ cấu hình riêng của trình duyệt này';
+const APPLY_WARNING = 'Ván đang chơi sẽ bị tính thua. Bấm lần nữa để áp dụng.';
 
 const CSS = `
 .cfgm-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,16,.82);display:flex;justify-content:center;align-items:stretch;font:15px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;color:#e8ebf5}
@@ -442,6 +445,8 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   }
   document.addEventListener('keydown', onKey, true);
 
+  /** Lần bấm đầu của "Áp dụng & chơi lại" khi ván đang chơi chỉ cảnh báo. */
+  let applyArmed = false;
   const cancelResetConfirm = (): void => {
     resetBtn.textContent = RESET_LABEL;
     resetBtn.classList.remove('danger');
@@ -450,6 +455,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
 
   saveBtn.addEventListener('click', () => {
     cancelResetConfirm();
+    applyArmed = false;
     const ok = opts.onSave(structuredClone(draft));
     syncOverrideNote();
     if (ok === false) setStatus('Không lưu được (trình duyệt chặn lưu trữ).', 'bad');
@@ -457,6 +463,11 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   });
   applyBtn.addEventListener('click', () => {
     cancelResetConfirm();
+    if (opts.runActive() && !applyArmed) {
+      applyArmed = true;
+      setStatus(APPLY_WARNING, 'bad');
+      return;
+    }
     const cfg = structuredClone(draft);
     document.removeEventListener('keydown', onKey, true);
     overlay.remove();

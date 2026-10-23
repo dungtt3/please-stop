@@ -31,6 +31,7 @@ export class ResultScreen {
   private boardTitle: Phaser.GameObjects.Text;
   private cols: Phaser.GameObjects.Text[];
   private btn: Button;
+  private homeBtn: Button;
   private visible = false;
   private form: { wrap: HTMLDivElement; input: HTMLInputElement; send: HTMLButtonElement } | null = null;
   private submitted = false;
@@ -39,7 +40,12 @@ export class ResultScreen {
   private epoch = 0;
   private score = { waveReached: 0, kills: 0, won: false };
 
-  constructor(private scene: Phaser.Scene, restart: () => void) {
+  constructor(
+    private scene: Phaser.Scene,
+    restart: () => void,
+    home: () => void,
+    private defaultName: () => string,
+  ) {
     this.shade = scene.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.8).setOrigin(0).setDepth(500).setInteractive();
     this.title = scene.add
       .text(GAME_W / 2, 50, '', { fontFamily: FONT, fontSize: '52px', fontStyle: 'bold', color: '#ffffff' })
@@ -58,7 +64,8 @@ export class ResultScreen {
         .text(i === 0 ? 70 : GAME_W / 2 + 30, 276, '', { fontFamily: 'Consolas, "Courier New", monospace', fontSize: '18px', color: COLORS.text, lineSpacing: 8 })
         .setOrigin(0, 0).setDepth(501),
     );
-    this.btn = new Button(scene, GAME_W / 2 - 130, 625, 260, 66, 'Chơi lại', restart, { depth: 501, fontSize: 28, fill: 0x2e7d32 });
+    this.btn = new Button(scene, GAME_W / 2 - 270, 625, 260, 66, 'Chơi lại', restart, { depth: 501, fontSize: 28, fill: 0x2e7d32 });
+    this.homeBtn = new Button(scene, GAME_W / 2 + 10, 625, 260, 66, 'Màn hình chính', home, { depth: 501, fontSize: 28 });
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.removeForm());
     this.setVisible(false);
   }
@@ -76,6 +83,7 @@ export class ResultScreen {
     this.boardTitle.setVisible(v);
     for (const c of this.cols) c.setVisible(v);
     this.btn.setVisible(v);
+    this.homeBtn.setVisible(v);
   }
 
   private makeForm(): void {
@@ -88,7 +96,7 @@ export class ResultScreen {
     input.placeholder = 'Tên của bạn (tối đa 20 ký tự)';
     input.autocomplete = 'off';
     input.setAttribute('aria-label', 'Tên của bạn');
-    input.value = sanitizeName(readName());
+    input.value = sanitizeName(readName() || this.defaultName());
     input.style.cssText = 'flex:1;min-width:0;padding:0 10px;border:1px solid #5b6585;border-radius:6px;background:#0d0f16;color:#e8ebf5;font:inherit;font-size:1em';
     const send = document.createElement('button');
     send.type = 'button';
