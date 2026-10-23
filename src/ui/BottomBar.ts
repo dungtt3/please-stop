@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { sfx } from '../audio/sfx';
 import { buyLuck, drawCard, summon } from '../sim/commands';
 import { startWave } from '../sim/game';
 import { startQuiz } from '../sim/quiz';
@@ -33,7 +34,11 @@ export class Button {
       })
       .setOrigin(0.5).setDepth(depth + 1);
     this.bg.on('pointerdown', () => {
-      if (this.bg.visible && this.enabled) onClick();
+      if (!this.bg.visible || !this.enabled) return;
+      // Mỗi lần bấm đều thử mở khóa âm thanh (bật âm thanh sau này vẫn hoạt động); idempotent.
+      sfx.unlock();
+      sfx.play('click');
+      onClick();
     });
   }
 

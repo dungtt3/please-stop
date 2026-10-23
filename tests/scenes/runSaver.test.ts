@@ -223,3 +223,90 @@ test('xung đột đến khi menu đang mở (flushPrep): ván ngừng live ngay
   expect(hooks.conflicts).toBe(1);
   expect(saver.live).toBe(false);
 });
+
+describe('saveAndWait', () => {
+  function hung() {
+    const saves: RunSave[] = [];
+    let release: (r: SaveResult) => void = () => undefined;
+    const manager = {
+      deviceId: 'dev',
+      save: (s: RunSave): Promise<SaveResult> => {
+        saves.push(s);
+        return new Promise<SaveResult>((res) => {
+          release = res;
+        });
+      },
+      end: async (): Promise<void> => undefined,
+    };
+    const saver = new RunSaver(manager, { onConflict: () => undefined, onUnsaved: () => undefined }, () => 1000, () => 'run-x');
+    return { saver, saves, release: (r: SaveResult = 'ok') => release(r) };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  test('save treo: resolve sau timeoutMs', async () => {
+    vi.useFakeTimers();
+    const { saver, saves } = hung();
+    const state = createGame(1);
+    saver.beginNew(state); // save #1 (treo)
+    let done = false;
+    const p = saver.saveAndWait(state, 4000).then(() => {
+      done = true;
+    });
+    expect(saves).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await p;
+    expect(done).toBe(true);
+  });
+
+  test('save xong nhanh: resolve ngay, không chờ hết giờ', async () => {
+    vi.useFakeTimers();
+    const { saver, state, saves } = setup();
+    saver.beginNew(state);
+    await saver.saveAndWait(state, 4000);
+    expect(saves).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('save bị từ chối: vẫn resolve, không ném', async () => {
+    const state = createGame(1);
+    const manager = {
+      deviceId: 'dev',
+      save: (): Promise<SaveResult> => Promise.reject(new Error('mạng')),
+      end: async (): Promise<void> => undefined,
+    };
+    const saver = new RunSaver(manager, { onConflict: () => undefined, onUnsaved: () => undefined }, () => 1000, () => 'r');
+    saver.beginNew(state);
+    await expect(saver.saveAndWait(state, 50)).resolves.toBeUndefined();
+  });
+
+  test('đang wave: không gọi save, resolve ngay', async () => {
+    const { saver, state, saves } = setup();
+    saver.beginNew(state);
+    startWave(state);
+    await saver.saveAndWait(state, 4000);
+    expect(saves).toHaveLength(1);
+  });
+
+  test('sau end() hoặc stop(): không gọi save', async () => {
+    const a = setup();
+    a.saver.beginNew(a.state);
+    a.saver.end();
+    await a.saver.saveAndWait(a.state, 4000);
+    expect(a.saves).toHaveLength(1);
+    const b = setup();
+    b.saver.beginNew(b.state);
+    b.saver.stop();
+    await b.saver.saveAndWait(b.state, 4000);
+    expect(b.saves).toHaveLength(1);
+  });
+
+  test('kết quả conflict trong lúc chờ vẫn gọi onConflict', async () => {
+    const { saver, state, hooks } = setup('conflict');
+    saver.beginNew(state);
+    await saver.saveAndWait(state, 4000);
+    expect(hooks.conflicts).toBe(1);
+  });
+});

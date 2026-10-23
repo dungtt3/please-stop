@@ -14,11 +14,13 @@ import { Hand } from '../ui/Hand';
 import { UnitPanel } from '../ui/UnitPanel';
 import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
+import { PauseMenu } from '../ui/PauseMenu';
+import { sfx } from '../audio/sfx';
 import { Banner, Toast } from '../ui/Toast';
 import { browserStore } from '../settings/configStore';
 import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
-import { recordRun } from '../net/cloud';
+import { recordRun, TIMEOUT_MS } from '../net/cloud';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
@@ -51,12 +53,15 @@ export class GameScene extends Phaser.Scene {
   private unitPanel!: UnitPanel;
   private quizModal!: QuizModal;
   private resultScreen!: ResultScreen;
+  private pauseMenu!: PauseMenu;
   private toast!: Toast;
   private banner!: Banner;
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
   private runRecorded = false;
+  /** Đã phát tiếng thắng/thua của ván này (chỉ một lần). */
+  private endSounded = false;
   private saver!: RunSaver;
   private manager!: SaveManager;
   private accountName: string | null = null;
@@ -86,6 +91,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedUnitId = null;
     this.drag = null;
     this.runRecorded = false;
+    this.endSounded = false;
     const cfg = this.resolveCfg().config;
     if (start.kind === 'new') {
       this.state = createGame(Date.now(), cfg);
@@ -95,6 +101,7 @@ export class GameScene extends Phaser.Scene {
         this.state.phase = 'lost';
         // Bản ghi ps_runs do update() ghi đúng một lần (nếu lần load này xóa được bản lưu).
         this.runRecorded = !start.record;
+        this.endSounded = true; // ván thua đã báo từ lần trước: không phát lại tiếng
       }
     }
     this.board = this.add.graphics().setDepth(0);
@@ -126,6 +133,25 @@ export class GameScene extends Phaser.Scene {
       () => this.accountName ?? '',
     );
 
+    this.pauseMenu = new PauseMenu(this, {
+      onToggle: (open) => {
+        this.menuOpen = open;
+        sfx.setSuspended(open);
+        if (open) this.drag = null;
+      },
+      phase: () => this.state.phase,
+      saveAndLeave: async () => {
+        await this.saver.saveAndWait(this.state, TIMEOUT_MS);
+        this.saver.stop();
+        this.scene.start('Start');
+      },
+      quitAsLoss: () => {
+        // Ván đã mất quyền (xung đột/đã kết thúc): chỉ về màn hình chính, không ghi thêm.
+        if (this.saver.live) this.recordResult(false);
+        this.scene.start('Start');
+      },
+    });
+
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onUp(p));
@@ -134,11 +160,18 @@ export class GameScene extends Phaser.Scene {
     });
 
     const onVisibility = (): void => {
-      if (document.visibilityState === 'hidden') this.saver.flushPrep(this.state);
+      if (document.visibilityState === 'hidden') {
+        this.saver.flushPrep(this.state);
+        sfx.setSuspended(true);
+      } else {
+        sfx.setSuspended(this.menuOpen);
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      this.menuOpen = false;
+      sfx.setSuspended(document.visibilityState === 'hidden');
       this.saver.stop();
       this.conflictTimer?.remove(false);
       this.conflictTimer = null;
@@ -159,6 +192,7 @@ export class GameScene extends Phaser.Scene {
   restart(): void {
     this.state = createGame(Date.now(), this.resolveCfg().config);
     this.runRecorded = false;
+    this.endSounded = false;
     this.halted = false;
     this.conflictTimer?.remove(false);
     this.conflictTimer = null;
@@ -183,9 +217,19 @@ export class GameScene extends Phaser.Scene {
     return r;
   }
 
-  /** Nút ⚙: tạm thời không làm gì (popup tạm dừng sẽ được nối ở đây). */
+  /** Nút ⚙: mở popup tạm dừng (không mở khi đang có màn kết quả, quiz hoặc ván bị đóng băng). */
   private openMenu(): void {
-    /* chưa có popup */
+    if (this.resultScreen.open || this.quizModal.open || this.halted) return;
+    this.pauseMenu.show();
+  }
+
+  /** Ghi kết quả ván lên cloud đúng một lần và xóa bản lưu. Dùng cho thắng/thua tự nhiên và thoát giữa wave (tính thua). */
+  private recordResult(won: boolean): void {
+    if (this.runRecorded) return;
+    this.runRecorded = true;
+    const s = this.state;
+    void recordRun({ waveReached: s.wave, won, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
+    this.saver.end();
   }
 
   toScreen(v: Vec): { x: number; y: number } {
@@ -290,10 +334,12 @@ export class GameScene extends Phaser.Scene {
       tick(s, dt);
       if (live) this.saver.addSeconds(dt);
     }
-    if (!this.runRecorded && (s.phase === 'won' || s.phase === 'lost')) {
-      this.runRecorded = true;
-      void recordRun({ waveReached: s.wave, won: s.phase === 'won', kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
-      this.saver.end();
+    if (s.phase === 'won' || s.phase === 'lost') {
+      this.recordResult(s.phase === 'won');
+      if (!this.endSounded) {
+        this.endSounded = true;
+        sfx.play(s.phase === 'won' ? 'win' : 'lose');
+      }
     }
     this.saver.tick(s, delta, this.menuOpen || this.halted);
     this.render();
@@ -395,16 +441,30 @@ export class GameScene extends Phaser.Scene {
 
   private handleEvent(e: GameEvent): void {
     switch (e.type) {
+      case 'attack':
+        sfx.play(e.crit ? 'crit' : 'hit');
+        break;
+      case 'summon':
+        sfx.play('summon');
+        break;
+      case 'merge':
+        sfx.play('merge');
+        break;
+      case 'quiz':
+        sfx.play(e.result === 'correct' ? 'quizRight' : 'quizWrong');
+        break;
       case 'damage':
         this.floatText(e.pos, String(Math.round(e.amount)), e.crit ? COLORS.crit : '#ffffff', e.crit ? 22 : 14);
         break;
       case 'kill':
         this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 16);
+        sfx.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         break;
       case 'skill': {
         const c = this.toScreen(e.pos);
         const ring = this.add.circle(c.x, c.y, this.tileSize * 0.3, 0xffffff, 0.35).setStrokeStyle(3, 0xfff59d).setDepth(40);
         this.tweens.add({ targets: ring, scale: 3, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
+        sfx.play(`skill.${e.skill}`);
         break;
       }
       case 'cardGranted':
@@ -415,6 +475,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'waveStart': {
         this.saver.waveStarted(this.state);
+        sfx.play('waveStart');
         const m = this.state.modifier ? this.state.config.modifiers[this.state.modifier].name : '';
         this.banner.show(m ? `Wave ${e.wave}
 ${m}` : `Wave ${e.wave}`);
@@ -422,10 +483,12 @@ ${m}` : `Wave ${e.wave}`);
       }
       case 'waveEnd':
         this.saver.waveEnded(this.state);
+        sfx.play('waveEnd');
         this.banner.show(`+${e.reward} vàng`, COLORS.gold);
         break;
       case 'leak':
         this.cameras.main.shake(150, 0.004);
+        sfx.play('leak');
         break;
       default:
         break;

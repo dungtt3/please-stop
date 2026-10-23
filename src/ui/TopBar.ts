@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { sfx } from '../audio/sfx';
 import type { GameState } from '../sim/types';
 import { COLORS, FONT, GAME_W, TOP_BAR_H } from './theme';
 
@@ -25,14 +26,22 @@ export class TopBar {
         fontFamily: FONT, fontSize: '22px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 16 },
       })
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
-    this.speedBtn.on('pointerdown', toggleSpeed);
+    this.speedBtn.on('pointerdown', () => {
+      sfx.unlock();
+      sfx.play('click');
+      toggleSpeed();
+    });
     this.speedBtn.setText('Tốc độ ×1');
     const gear = scene.add
       .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', {
         fontFamily: FONT, fontSize: '28px', color: COLORS.text, backgroundColor: '#2f3650', padding: { x: 12, y: 12 },
       })
       .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
-    gear.on('pointerdown', openMenu);
+    gear.on('pointerdown', () => {
+      sfx.unlock();
+      sfx.play('click');
+      openMenu();
+    });
   }
 
   update(s: GameState, speed: 1 | 2): void {

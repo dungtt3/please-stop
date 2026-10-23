@@ -48,7 +48,7 @@ export class RunSaver {
   /** Ván mới: runId mới và lưu ngay. */
   beginNew(state: GameState): void {
     this.reset(this.newId(), 0, true, null);
-    this.saveNow(state);
+    void this.saveNow(state);
   }
 
   /** Tiếp tục ván đã lưu: bản đó đã nằm trong kho, chỉ lưu lại khi có gì đổi. */
@@ -72,22 +72,22 @@ export class RunSaver {
     if (this.sinceSave < AUTOSAVE_MS) return;
     this.sinceSave = 0;
     // Dấu vân tay chỉ so sánh được khi đang prep (gồm hồi chiêu và RNG).
-    if (this.lastFp === null || saveFingerprint(this.snapshot(state)) !== this.lastFp) this.saveNow(state);
+    if (this.lastFp === null || saveFingerprint(this.snapshot(state)) !== this.lastFp) void this.saveNow(state);
   }
 
   /** Sự kiện waveStart: ghi bản `inWave`. */
   waveStarted(state: GameState): void {
-    if (state.phase === 'wave') this.saveNow(state);
+    if (state.phase === 'wave') void this.saveNow(state);
   }
 
   /** Sự kiện waveEnd: ghi đè bản `inWave` bằng bản chuẩn bị mới. */
   waveEnded(state: GameState): void {
-    if (state.phase === 'prep') this.saveNow(state);
+    if (state.phase === 'prep') void this.saveNow(state);
   }
 
   /** Tab bị ẩn lúc đang chuẩn bị. */
   flushPrep(state: GameState): void {
-    if (state.phase === 'prep') this.saveNow(state);
+    if (state.phase === 'prep') void this.saveNow(state);
   }
 
   /** Ván kết thúc (thắng/thua) hoặc bị bỏ: xóa bản lưu, không chặn giao diện, và không lưu thêm. */
@@ -95,6 +95,23 @@ export class RunSaver {
     if (!this.active) return;
     this.active = false;
     void this.manager.end(this.runId).catch(() => undefined);
+  }
+
+  /** Lúc chuẩn bị: lưu ngay và chờ xong (tối đa timeoutMs). Trả về khi xong/hết giờ; không ném. */
+  async saveAndWait(state: GameState, timeoutMs: number): Promise<void> {
+    if (!this.active || state.phase !== 'prep') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const saved = this.saveNow(state);
+      const timeout = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      });
+      await Promise.race([saved, timeout]);
+    } catch {
+      /* không ném: về màn hình chính dù lưu lỗi */
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /** Rời scene: dừng lưu mà không xóa bản lưu. */
@@ -106,13 +123,13 @@ export class RunSaver {
     return snapshotRun(state, { runId: this.runId, deviceId: this.manager.deviceId, runSeconds: this.runSeconds, now: this.now() });
   }
 
-  private saveNow(state: GameState): void {
-    if (!this.active || state.phase === 'won' || state.phase === 'lost') return;
+  private saveNow(state: GameState): Promise<void> {
+    if (!this.active || state.phase === 'won' || state.phase === 'lost') return Promise.resolve();
     const snap = this.snapshot(state);
     this.lastFp = saveFingerprint(snap);
     this.sinceSave = 0;
     const id = this.runId;
-    void this.manager.save(snap).then(
+    return this.manager.save(snap).then(
       (r) => this.onResult(id, r),
       () => undefined,
     );
