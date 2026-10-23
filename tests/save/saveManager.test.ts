@@ -688,19 +688,52 @@ describe('ván khách khi đăng nhập', () => {
     expect(cloud.row).toMatchObject({ runId: 'new' });
   });
 
-  test('adoptGuest: offline → pending, load sau đẩy lên', async () => {
+  test('adoptGuest: lỗi mạng → pending, ván khách ở yên trên máy, không có bản sao tài khoản; lần sau gộp được', async () => {
+    const store = device('dev-A');
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
+    const cloud = fakeCloud();
+    const m = acct(store, cloud);
+    expect(await m.load()).toEqual({ kind: 'none' });
+    cloud.offline = true;
+    expect(await m.adoptGuest()).toBe('pending');
+    expect(readLocal(store, GUEST_KEY)).toMatchObject({ save: { runId: 'g' } });
+    expect(store.getItem(KEY)).toBeNull();
+    cloud.offline = false;
+    const m2 = acct(store, cloud);
+    expect(await m2.load()).toEqual({ kind: 'none' });
+    expect(m2.checkGuest().guest).toMatchObject({ runId: 'g' });
+    expect(await m2.adoptGuest()).toBe('ok');
+    expect(store.getItem(GUEST_KEY)).toBeNull();
+    expect(cloud.row).toMatchObject({ runId: 'g', rev: 1 });
+  });
+
+  test('adoptGuest: tài khoản thật ra có ván (fetch lỗi lúc tải) → ván khách không mất', async () => {
+    const store = device('dev-A');
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
+    const cloud = fakeCloud();
+    await acct(device('dev-B'), cloud).save(mk({ runId: 'acc', deviceId: 'dev-B' }));
+    cloud.offline = true;
+    const m = acct(store, cloud);
+    expect(await m.load()).toEqual({ kind: 'none' });
+    expect(m.offline).toBe(true);
+    expect(await m.adoptGuest()).toBe('pending');
+    cloud.offline = false;
+    expect(await acct(store, cloud).load()).toMatchObject({ kind: 'resume', save: { runId: 'acc' } });
+    expect(readLocal(store, GUEST_KEY)).toMatchObject({ save: { runId: 'g' } });
+    expect(cloud.row).toMatchObject({ runId: 'acc' });
+  });
+
+  test('adoptGuest: hết giờ nhưng server đã ghi → pending, ván khách còn trên máy và đã có trên tài khoản', async () => {
     const store = device('dev-A');
     await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
     const cloud = fakeCloud();
     const m = acct(store, cloud);
     await m.load();
-    cloud.offline = true;
+    cloud.lostReply = true;
     expect(await m.adoptGuest()).toBe('pending');
-    expect(store.getItem(GUEST_KEY)).toBeNull();
-    expect(readLocal(store, KEY)).toMatchObject({ save: { runId: 'g' }, baseRev: 0, dirty: true });
-    cloud.offline = false;
-    expect(await acct(store, cloud).load()).toMatchObject({ kind: 'resume', save: { runId: 'g' } });
-    expect(cloud.row).toMatchObject({ runId: 'g', rev: 1 });
+    cloud.lostReply = false;
+    expect(readLocal(store, GUEST_KEY)).toMatchObject({ save: { runId: 'g' } });
+    expect(await m.load()).toMatchObject({ kind: 'resume', save: { runId: 'g' } });
   });
 
   test('dropGuest: xóa GUEST_KEY', async () => {

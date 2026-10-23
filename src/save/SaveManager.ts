@@ -128,23 +128,21 @@ export class SaveManager {
     return { lostGuest: null, guest: g.save };
   }
 
-  /** Chuyển ván khách sang tài khoản. `'conflict'` = tài khoản đã có ván: trả ván khách về chỗ cũ, không chặn lưu. */
+  /**
+   * Chuyển ván khách sang tài khoản; `ps.save.guest` chỉ bị xóa khi cloud đã nhận (`'ok'`).
+   * `'pending'` = lỗi mạng: chưa chuyển, ván khách ở yên trên máy, không có bản sao tài khoản (lần sau
+   * có mạng gộp hoặc hỏi lại; nếu put thật ra đã ghi thì lần tải sau thấy chính ván đó trên tài khoản).
+   * `'conflict'` = tài khoản đã có ván: ván khách cũng ở yên, không chặn lưu.
+   */
   async adoptGuest(): Promise<SaveResult> {
     const g = readLocal(this.store, GUEST_KEY);
     if (!this.signedIn || !g || g === 'invalid' || g.save.inWave) return 'ok';
     const save = g.save;
-    this.setCur({ save, baseRev: 0, dirty: true });
-    removeLocal(this.store, GUEST_KEY);
     const r = await this.cloudPut(save.runId, 0, save);
-    if (r.ok) {
-      if (this.cur?.save === save) this.setCur({ save, baseRev: r.rev, dirty: false });
-      return 'ok';
-    }
-    if (r.error === 'network') return this.localOk ? 'pending' : 'unsaved';
-    writeLocal(this.store, GUEST_KEY, { save, baseRev: 0, dirty: false });
-    this.cur = null;
-    removeLocal(this.store, this.key);
-    return 'conflict';
+    if (!r.ok) return r.error === 'network' ? 'pending' : 'conflict';
+    removeLocal(this.store, GUEST_KEY);
+    this.setCur({ save, baseRev: r.rev, dirty: false });
+    return 'ok';
   }
 
   dropGuest(): void {

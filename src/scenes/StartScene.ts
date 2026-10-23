@@ -79,13 +79,28 @@ export class StartScene extends Phaser.Scene {
     // Nhớ để vẫn báo "Không đọc được ván đã lưu" khi ván khách được nhận thay chỗ.
     const unreadable = info.kind === 'invalid';
 
-    if (account && guest) {
-      // 'lost' không gộp lần này (ván khách ở yên trên máy, lần vào sau sẽ gộp hoặc hỏi) để "Chơi lại" không đụng dòng vừa gộp.
-      if (info.kind === 'none' || info.kind === 'invalid') {
-        // 'conflict': ván khách giữ nguyên trên máy này, hiện trạng thái tài khoản như chưa gộp (R2).
+    // Chỉ gộp khi tài khoản chưa có ván dở ('none' / 'invalid'), hoặc hỏi khi cả hai có ván ('resume').
+    // Không gộp lần này (ván khách ở yên trên máy, lần vào sau có mạng sẽ gộp hoặc hỏi) khi:
+    // - offline: không biết tài khoản có ván hay không;
+    // - 'lost': để "Chơi lại" không đụng dòng vừa gộp;
+    // - 'elsewhere': ván tài khoản có thể đang được chơi ở máy khác.
+    if (account && guest && !manager.offline) {
+      const guestRun = guest.runId;
+      // Lần gộp trước hết giờ nhưng server đã ghi: ván khách đã nằm trên tài khoản, chỉ bỏ bản khách.
+      const alreadyAdopted = (i: StartInfo): boolean => i.kind === 'resume' && i.save.runId === guestRun;
+      if (alreadyAdopted(info)) {
+        manager.dropGuest();
+      } else if (info.kind === 'none' || info.kind === 'invalid') {
+        // 'conflict' / 'pending': ván khách giữ nguyên trên máy này, hiện trạng thái tài khoản như chưa gộp (R2).
         const r = await manager.adoptGuest();
         if (dead()) return;
-        if (r !== 'conflict') info = { kind: 'resume', save: guest };
+        if (r === 'ok') info = { kind: 'resume', save: guest };
+        else if (r === 'pending') {
+          // Lỗi mạng có thể là hết giờ mà server đã ghi: đọc lại để không mở "Chơi" đè lên ván vừa gộp.
+          info = await manager.load();
+          if (dead()) return;
+          if (alreadyAdopted(info)) manager.dropGuest();
+        }
       } else if (info.kind === 'resume') {
         const keepDevice =
           (await this.ask('Giữ ván nào?', [
@@ -98,15 +113,15 @@ export class StartScene extends Phaser.Scene {
           void manager.end(info.save.runId);
           const r = await manager.adoptGuest();
           if (dead()) return;
-          // Xung đột: ván khách vẫn trên máy, còn ván tài khoản đã bị kết thúc ở trên → đọc lại cho đúng.
-          info = r === 'conflict' ? await manager.load() : { kind: 'resume', save: guest };
+          // Không gộp được: ván khách vẫn trên máy, còn ván tài khoản đã bị kết thúc ở trên → đọc lại cho đúng.
+          info = r === 'ok' ? { kind: 'resume', save: guest } : await manager.load();
           if (dead()) return;
+          if (r !== 'ok' && alreadyAdopted(info)) manager.dropGuest();
         } else {
           void recordRun(runStatsOf(guest));
           manager.dropGuest();
         }
       }
-      // 'elsewhere' / 'invalid': không gộp, ván khách ở lại trên máy (thử lại lần sau).
     }
 
     if (info.kind === 'lost') {
