@@ -2,13 +2,13 @@ import Phaser from 'phaser';
 import { applyCard, discardCard } from '../sim/commands';
 import type { Card, CommandResult, GameState } from '../sim/types';
 import { Button } from './BottomBar';
-import { cardLabel, COLORS, GAME_H, GAME_W, RARITY_COLOR, RARITY_NAME, textStyle } from './theme';
+import { LAYOUT } from './layout';
+import { cardLabel, COLORS, RARITY_COLOR, RARITY_NAME, textStyle } from './theme';
 
-const CARD_W = 150;
-const CARD_H = 100;
-const GAP = 10;
-const MAX_CARDS = 5;
-const Y = GAME_H - CARD_H - 8;
+const H = LAYOUT.hand;
+const CARD_W = H.cardW;
+const CARD_H = H.cardH;
+const MAX_CARDS = H.maxCards;
 const DRAG_THRESHOLD = 8;
 
 interface Slot {
@@ -25,7 +25,6 @@ export class Hand {
   private press: { cardId: number; x: number; y: number; moving: boolean } | null = null;
   private ghost: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null = null;
   private flashUntil = new Map<number, number>();
-  private x0 = (GAME_W - (MAX_CARDS * CARD_W + (MAX_CARDS - 1) * GAP)) / 2;
 
   constructor(
     private scene: Phaser.Scene,
@@ -34,22 +33,23 @@ export class Hand {
     private slotAt: (x: number, y: number) => number,
   ) {
     for (let i = 0; i < MAX_CARDS; i++) {
-      const x = this.x0 + i * (CARD_W + GAP);
+      const { x, y: Y } = H.cards[i].rect;
       const bg = scene.add.rectangle(x, Y, CARD_W, CARD_H, 0x252a3a).setOrigin(0).setDepth(110).setStrokeStyle(4, 0x9e9e9e)
         .setInteractive({ useHandCursor: true });
       const label = scene.add
-        .text(x + CARD_W / 2, Y + CARD_H / 2 + 16, '', textStyle({
+        .text(x + CARD_W / 2, Y + H.labelDy, '', textStyle({
           size: 22, color: COLORS.text, bold: true, align: 'center', wrap: CARD_W - 16, extra: { lineSpacing: -4 },
         }))
         .setOrigin(0.5).setDepth(111);
-      const rarity = scene.add.text(x + 8, Y + 4, '', textStyle({ size: 22, color: COLORS.muted })).setDepth(111);
+      const rarity = scene.add.text(x + 8, Y + H.rarityDy, '', textStyle({ size: 22, color: COLORS.muted })).setDepth(111);
       const slot: Slot = { bg, label, rarity, cardId: null };
       bg.on('pointerdown', (p: Phaser.Input.Pointer) => {
         if (slot.cardId !== null) this.press = { cardId: slot.cardId, x: p.x, y: p.y, moving: false };
       });
       this.slots.push(slot);
     }
-    this.discardBtn = new Button(scene, 0, 0, 56, 56, 'Bỏ', () => {
+    // Nút bỏ thẻ cố định bên phải hàng thẻ (không đè chữ của thẻ đang chọn).
+    this.discardBtn = Button.at(scene, H.discard, 'Bỏ thẻ', () => {
       if (this.selectedId !== null) {
         this.act(discardCard(this.getState(), this.selectedId));
         this.selectedId = null;
@@ -145,20 +145,16 @@ export class Hand {
       sl.rarity.setVisible(show);
       if (!card) continue;
       const selected = card.id === this.selectedId;
-      const lift = selected ? 10 : 0;
-      const x = this.x0 + i * (CARD_W + GAP);
+      const lift = selected ? H.lift : 0;
+      const { x, y: Y } = H.cards[i].rect;
       const flashing = (this.flashUntil.get(card.id) ?? 0) > now;
       const blink = flashing ? 0.5 + 0.5 * Math.sin(now / 60) : 0;
       sl.bg.setPosition(x, Y - lift);
       sl.bg.setFillStyle(flashing ? 0x6a6a3a : selected ? 0x363d57 : 0x252a3a, 1);
       sl.bg.setStrokeStyle(selected || flashing ? 6 : 4, flashing && blink > 0.5 ? COLORS.highlight : RARITY_COLOR[card.rarity]);
-      sl.label.setPosition(x + CARD_W / 2, Y + CARD_H / 2 + 16 - lift)
+      sl.label.setPosition(x + CARD_W / 2, Y + H.labelDy - lift)
         .setText(cardLabel(card.stat, s.config.cards.values[card.stat][card.rarity]));
-      sl.rarity.setPosition(x + 8, Y + 4 - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));
-      if (selected) {
-        this.discardBtn.bg.setPosition(x + CARD_W - 56, Y - lift);
-        this.discardBtn.label.setPosition(x + CARD_W - 28, Y - lift + 28);
-      }
+      sl.rarity.setPosition(x + 8, Y + H.rarityDy - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));
     }
     this.discardBtn.setVisible(this.selectedId !== null);
   }

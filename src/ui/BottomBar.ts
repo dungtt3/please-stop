@@ -5,7 +5,8 @@ import { startWave } from '../sim/game';
 import { startQuiz } from '../sim/quiz';
 import { drawCost, luckCost, summonCost } from '../sim/units';
 import type { CommandResult, GameState } from '../sim/types';
-import { BTN_H, COLORS, GAME_H, GAME_W, textStyle } from './theme';
+import { type Btn, LAYOUT, padOf } from './layout';
+import { BTN_H, COLORS, textStyle } from './theme';
 
 export { BTN_H };
 
@@ -13,10 +14,18 @@ export interface ButtonOpts {
   depth?: number;
   fill?: number;
   fontSize?: number;
+  /** Mở rộng vùng chạm quanh hình (px khung game) mà không đổi hình vẽ. */
+  hit?: { padX?: number; padY?: number; left?: number; right?: number; top?: number; bottom?: number };
 }
 
-/** Nút chữ nhật cao >= 56px dùng chung cho các bảng UI. */
+/** Nút chữ nhật dùng chung cho các bảng UI; vùng chạm có thể lớn hơn hình (xem `layout.ts`). */
 export class Button {
+  /** Dựng nút từ một mục của `LAYOUT` (hình + vùng chạm). */
+  static at(scene: Phaser.Scene, b: Btn, text: string, onClick: () => void, opts: ButtonOpts = {}): Button {
+    const r = b.rect;
+    return new Button(scene, r.x, r.y, r.w, r.h, text, onClick, { ...opts, hit: padOf(b) });
+  }
+
   readonly bg: Phaser.GameObjects.Rectangle;
   readonly label: Phaser.GameObjects.Text;
   private enabled = true;
@@ -27,7 +36,22 @@ export class Button {
   ) {
     const depth = opts.depth ?? 110;
     this.bg = scene.add.rectangle(x, y, w, h, opts.fill ?? 0x2f3650).setOrigin(0).setDepth(depth)
-      .setStrokeStyle(2, 0x5b6585).setInteractive({ useHandCursor: true });
+      .setStrokeStyle(2, 0x5b6585);
+    const p = opts.hit;
+    if (p) {
+      const left = p.left ?? p.padX ?? 0;
+      const right = p.right ?? p.padX ?? 0;
+      const top = p.top ?? p.padY ?? 0;
+      const bottom = p.bottom ?? p.padY ?? 0;
+      // Hit area tương đối với góc trên-trái của hình; đi theo nút khi nút đổi vị trí.
+      this.bg.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(-left, -top, w + left + right, h + top + bottom),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
+    } else {
+      this.bg.setInteractive({ useHandCursor: true });
+    }
     this.label = scene.add
       .text(x + w / 2, y + h / 2, text, textStyle({
         size: opts.fontSize ?? 22, color: COLORS.text, align: 'center', wrap: w - 12,
@@ -69,12 +93,8 @@ export class BottomBar {
   private startBtn: Button;
 
   constructor(scene: Phaser.Scene, getState: () => GameState, act: (r: CommandResult) => void) {
-    const y = GAME_H - 176 + 2;
-    const w = 240;
-    const gap = 8;
-    const x0 = (GAME_W - (5 * w + 4 * gap)) / 2;
     const mk = (i: number, fn: () => CommandResult | void) =>
-      new Button(scene, x0 + i * (w + gap), y, w, BTN_H, '', () => {
+      Button.at(scene, LAYOUT.bottom.buttons[i], '', () => {
         const r = fn();
         if (r) act(r);
       });

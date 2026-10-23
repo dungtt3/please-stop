@@ -25,7 +25,8 @@ import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
-import { BOTTOM_H, COLORS, GAME_H, GAME_W, MAP_LEFT, MAX_TILE, RARITY_COLOR, TOP_BAR_H, textStyle } from '../ui/theme';
+import { boardTile, topBarOwns } from '../ui/layout';
+import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, RARITY_COLOR, TOP_BAR_H, textStyle } from '../ui/theme';
 import { BossBar } from '../ui/BossBar';
 import { BoardViews } from '../visuals/BoardViews';
 import { Effects } from '../visuals/effects';
@@ -273,7 +274,8 @@ export class GameScene extends Phaser.Scene {
   private layout(): void {
     const m = this.state.map;
     const availH = GAME_H - TOP_BAR_H - BOTTOM_H;
-    this.tileSize = Math.max(16, Math.floor(Math.min(MAX_TILE, availH / m.rows, GAME_W / m.cols)));
+    // Ô tính từ chiều cao còn lại giữa hai thanh và chiều rộng trái cột phải (`layout.ts`).
+    this.tileSize = boardTile(m.rows, m.cols);
     this.originX = MAP_LEFT;
     this.originY = TOP_BAR_H + (availH - m.rows * this.tileSize) / 2;
   }
@@ -317,10 +319,13 @@ export class GameScene extends Phaser.Scene {
     return this.state.map.slots.findIndex((s) => s.x === tx && s.y === ty);
   }
 
-  /** Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. */
+  /**
+   * Vùng UI (thanh trên/dưới, bảng, modal) sở hữu con trỏ; bản đồ bỏ qua. Vùng chạm thanh dưới bắt đầu
+   * đúng ở đáy hàng cuối của bàn chơi (không lấn), nên chạm vào ô hàng cuối luôn thuộc bàn chơi.
+   */
   private uiOwns(p: Phaser.Input.Pointer): boolean {
     return (
-      this.menuOpen || p.y < TOP_BAR_H || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
+      this.menuOpen || topBarOwns(p.x, p.y) || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
       this.quizModal.open || this.resultScreen.open || this.hand.busy
     );
   }

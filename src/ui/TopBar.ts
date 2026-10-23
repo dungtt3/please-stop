@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { sfx } from '../audio/sfx';
 import type { GameState } from '../sim/types';
 import { formatNum } from '../visuals/viewMath';
+import { Button } from './BottomBar';
+import { LAYOUT } from './layout';
 import { COLORS, GAME_W, TOP_BAR_H, textStyle } from './theme';
 
 export class TopBar {
@@ -10,7 +11,7 @@ export class TopBar {
   private wave: Phaser.GameObjects.Text;
   private mod: Phaser.GameObjects.Text;
   private timer: Phaser.GameObjects.Text;
-  private speedBtn: Phaser.GameObjects.Text;
+  private speedBtn: Button;
 
   constructor(scene: Phaser.Scene, toggleSpeed: () => void, openMenu: () => void) {
     scene.add.rectangle(0, 0, GAME_W, TOP_BAR_H, COLORS.bar).setOrigin(0).setDepth(100);
@@ -23,27 +24,9 @@ export class TopBar {
     this.mod.setWordWrapWidth(430);
     this.mod.setLineSpacing(-4);
     this.timer = mk(860, 22, COLORS.text);
-    this.speedBtn = scene.add
-      .text(GAME_W - 16, TOP_BAR_H / 2, '', textStyle({
-        size: 22, color: COLORS.text, extra: { backgroundColor: '#2f3650', padding: { x: 12, y: 16 } },
-      }))
-      .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
-    this.speedBtn.on('pointerdown', () => {
-      sfx.unlock();
-      sfx.play('click');
-      toggleSpeed();
-    });
-    this.speedBtn.setText('Tốc độ ×1');
-    const gear = scene.add
-      .text(this.speedBtn.x - this.speedBtn.width - 12, TOP_BAR_H / 2, '⚙', textStyle({
-        size: 28, color: COLORS.text, extra: { backgroundColor: '#2f3650', padding: { x: 12, y: 12 } },
-      }))
-      .setOrigin(1, 0.5).setDepth(101).setInteractive({ useHandCursor: true });
-    gear.on('pointerdown', () => {
-      sfx.unlock();
-      sfx.play('click');
-      openMenu();
-    });
+    // Nút tốc độ và ⚙: hình nằm trong thanh, vùng chạm cao 82 lấn xuống cột phải (không phải bàn chơi).
+    this.speedBtn = Button.at(scene, LAYOUT.top.speed, 'Tốc độ ×1', toggleSpeed, { depth: 101, fontSize: 22 });
+    Button.at(scene, LAYOUT.top.gear, '⚙', openMenu, { depth: 101, fontSize: 28 });
   }
 
   update(s: GameState, speed: 1 | 2): void {

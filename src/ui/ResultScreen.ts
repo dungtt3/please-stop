@@ -2,12 +2,17 @@ import Phaser from 'phaser';
 import type { GameState } from '../sim/types';
 import { Button } from './BottomBar';
 import { formatNum } from '../visuals/viewMath';
+import { LAYOUT } from './layout';
 import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
 import { fetchTopScores, submitScore, type ScoreRow } from '../net/cloud';
 import { MAX_NAME, sanitizeName } from '../settings/sanitizeName';
 
 const NAME_KEY = 'ps.playerName';
 const COL_ROWS = 10;
+const R = LAYOUT.result;
+/** Ô nhập tên DOM: chiều cao và cỡ chữ tối thiểu theo CSS px (chạm được, iOS không tự phóng to). */
+const FORM_MIN_CSS_H = 44;
+const FORM_MIN_CSS_FONT = 16;
 
 function readName(): string {
   try {
@@ -49,24 +54,24 @@ export class ResultScreen {
   ) {
     this.shade = scene.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.8).setOrigin(0).setDepth(500).setInteractive();
     this.title = scene.add
-      .text(GAME_W / 2, 50, '', textStyle({ size: 52, bold: true, color: '#ffffff' }))
+      .text(GAME_W / 2, R.titleY, '', textStyle({ size: 52, bold: true, color: '#ffffff' }))
       .setOrigin(0.5).setDepth(501);
     this.info = scene.add
-      .text(GAME_W / 2, 105, '', textStyle({ size: 24, color: COLORS.text, align: 'center' }))
+      .text(GAME_W / 2, R.infoY, '', textStyle({ size: 24, color: COLORS.text, align: 'center' }))
       .setOrigin(0.5).setDepth(501);
     this.status = scene.add
-      .text(GAME_W / 2, 204, '', textStyle({ size: 22, color: COLORS.muted }))
+      .text(GAME_W / 2, R.statusY, '', textStyle({ size: 22, color: COLORS.muted }))
       .setOrigin(0.5).setDepth(501);
     this.boardTitle = scene.add
-      .text(GAME_W / 2, 242, 'Bảng xếp hạng', textStyle({ size: 24, bold: true, color: COLORS.gold }))
+      .text(GAME_W / 2, R.boardTitleY, 'Bảng xếp hạng', textStyle({ size: 24, bold: true, color: COLORS.gold }))
       .setOrigin(0.5).setDepth(501);
     this.cols = [0, 1].map((i) =>
       scene.add
-        .text(i === 0 ? 70 : GAME_W / 2 + 30, 276, '', textStyle({ size: 22, mono: true, color: COLORS.text, extra: { lineSpacing: 2 } }))
+        .text(R.colX[i], R.colsY, '', textStyle({ size: 22, mono: true, color: COLORS.text, extra: { lineSpacing: 2 } }))
         .setOrigin(0, 0).setDepth(501),
     );
-    this.btn = new Button(scene, GAME_W / 2 - 270, 625, 260, 66, 'Chơi lại', restart, { depth: 501, fontSize: 28, fill: 0x2e7d32 });
-    this.homeBtn = new Button(scene, GAME_W / 2 + 10, 625, 260, 66, 'Màn hình chính', home, { depth: 501, fontSize: 28 });
+    this.btn = Button.at(scene, R.replay, 'Chơi lại', restart, { depth: 501, fontSize: 28, fill: 0x2e7d32 });
+    this.homeBtn = Button.at(scene, R.home, 'Màn hình chính', home, { depth: 501, fontSize: 28 });
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.removeForm());
     this.setVisible(false);
   }
@@ -90,7 +95,7 @@ export class ResultScreen {
   private makeForm(): void {
     this.removeForm();
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;z-index:900;display:flex;gap:8px;align-items:stretch;font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif';
+    wrap.style.cssText = 'position:fixed;z-index:900;display:flex;align-items:stretch;font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif';
     const input = document.createElement('input');
     input.type = 'text';
     input.maxLength = MAX_NAME;
@@ -98,11 +103,12 @@ export class ResultScreen {
     input.autocomplete = 'off';
     input.setAttribute('aria-label', 'Tên của bạn');
     input.value = sanitizeName(readName() || this.defaultName());
-    input.style.cssText = 'flex:1;min-width:0;padding:0 10px;border:1px solid #5b6585;border-radius:6px;background:#0d0f16;color:#e8ebf5;font:inherit;font-size:1em';
+    // Ô nhập phải chọn/sửa chữ được: không bao giờ user-select:none (kể cả khi trang chặn chọn chữ quanh canvas).
+    input.style.cssText = 'flex:1;min-width:0;padding:0 10px;border:1px solid #5b6585;border-radius:6px;background:#0d0f16;color:#e8ebf5;font:inherit;font-size:1em;-webkit-user-select:text;user-select:text';
     const send = document.createElement('button');
     send.type = 'button';
     send.textContent = 'Gửi điểm';
-    send.style.cssText = 'padding:0 16px;border:0;border-radius:6px;background:#2e7d32;color:#fff;font:inherit;font-weight:600;cursor:pointer';
+    send.style.cssText = 'flex:0 0 auto;box-sizing:border-box;white-space:nowrap;padding:0 8px;border:0;border-radius:6px;background:#2e7d32;color:#fff;font:inherit;font-weight:600;cursor:pointer';
     wrap.append(input, send);
     document.body.appendChild(wrap);
     const syncSend = (): void => {
@@ -181,11 +187,15 @@ export class ResultScreen {
     if (!f) return;
     const rect = this.scene.game.canvas.getBoundingClientRect();
     const k = rect.width / GAME_W;
-    f.wrap.style.left = `${rect.left + (GAME_W / 2 - 260) * k}px`;
-    f.wrap.style.top = `${rect.top + 150 * k}px`;
-    f.wrap.style.width = `${520 * k}px`;
-    f.wrap.style.height = `${34 * k}px`;
-    f.wrap.style.fontSize = `${Math.max(12, 18 * k)}px`;
+    const form = R.form;
+    f.wrap.style.left = `${rect.left + form.x * k}px`;
+    f.wrap.style.top = `${rect.top + form.y * k}px`;
+    f.wrap.style.width = `${form.w * k}px`;
+    // Cao ≥ 44 CSS px và chữ ≥ 16 CSS px dù canvas co nhỏ (82 khung game ≈ 44 CSS px ở 844×390).
+    f.wrap.style.height = `${Math.max(FORM_MIN_CSS_H, form.h * k)}px`;
+    f.wrap.style.fontSize = `${Math.max(FORM_MIN_CSS_FONT, 22 * k)}px`;
+    f.wrap.style.gap = `${(R.send.rect.x - (R.name.rect.x + R.name.rect.w)) * k}px`;
+    f.send.style.minWidth = `${R.send.rect.w * k}px`;
   }
 
   update(s: GameState): void {

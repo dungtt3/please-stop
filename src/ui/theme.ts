@@ -1,14 +1,7 @@
 import type { CardStat, Rarity } from '../sim/types';
 
-export const GAME_W = 1280;
-export const GAME_H = 720;
-export const TOP_BAR_H = 64;
-export const BOTTOM_H = 176;
-export const MAX_TILE = 64;
-/** Lề trái của bản đồ; phần còn lại bên phải dành cho bảng chi tiết nhân vật. */
-export const MAP_LEFT = 16;
-/** Chiều cao nút chữ nhật dùng chung. */
-export const BTN_H = 56;
+/** Hằng số bố cục nằm ở `layout.ts` (thuần, có test vùng chạm); giữ re-export cho chỗ dùng cũ. */
+export { BOTTOM_H, BTN_H, GAME_H, GAME_W, MAP_LEFT, MAX_TILE, TOP_BAR_H } from './layout';
 
 export const FONT = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
 

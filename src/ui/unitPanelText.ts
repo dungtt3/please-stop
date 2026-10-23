@@ -1,29 +1,36 @@
 import type { GameConfig } from '../config';
 import type { CardStat, ClassId, Unit, UnitStats } from '../sim/types';
-import { BOTTOM_H, BTN_H, CARD_STAT_NAME, fmtCardValue, GAME_H, RARITY_NAME, TOP_BAR_H } from './theme';
+import { LAYOUT } from './layout';
+import { BTN_H, CARD_STAT_NAME, fmtCardValue, RARITY_NAME } from './theme';
 
-/** Hình học của bảng chi tiết nhân vật (khung game). Thuần để test được. */
-export const PANEL_W = 400;
-export const PANEL_PAD = 8;
-export const PANEL_Y = TOP_BAR_H + 8;
-export const PANEL_BODY_TOP = 36;
+const L = LAYOUT.panel;
+
+/** Hình học của bảng chi tiết nhân vật (khung game, lấy từ `LAYOUT.panel`). Thuần để test được. */
+export const PANEL_X = L.x;
+export const PANEL_W = L.w;
+export const PANEL_PAD = L.pad;
+export const PANEL_Y = L.y;
+export const PANEL_BODY_TOP = L.bodyTop;
 export const PANEL_FONT = 18;
 export const PANEL_LINE_SPACING = 2;
 /** Chiều cao một dòng thân bảng (ước lượng thận trọng: ~1.3 × cỡ chữ + giãn dòng). */
 export const PANEL_LINE_PX = 26;
 /** Số ký tự ước lượng trên một dòng (ước lượng thận trọng: ~10 px mỗi ký tự ở cỡ 18). */
 export const PANEL_CHARS_PER_LINE = Math.floor((PANEL_W - 2 * PANEL_PAD) / 10);
-/** Khoảng cách dọc sau thân: nhãn hồi chiêu, thanh, nút bán. */
-export const PANEL_CD_GAP = 6;
-export const PANEL_CD_LABEL_H = 22;
+/** Hàng cuối bảng: nhãn + thanh hồi chiêu bên trái, nút Bán bên phải (vùng chạm cao 82). */
+export const PANEL_ACTION_GAP = L.actionGap;
 export const PANEL_BAR_H = 10;
-export const PANEL_BAR_GAP = 10;
-/** Đáy tối đa của bảng: ngay trên thanh dưới. */
-export const PANEL_MAX_BOTTOM = GAME_H - BOTTOM_H;
+/** Thanh hồi chiêu nằm dưới nhãn, tính từ đỉnh hàng cuối. */
+export const PANEL_BAR_DY = 32;
+export const PANEL_SELL_W = L.sellW;
+export const PANEL_SELL_PAD_Y = L.sellPadY;
+export const PANEL_BOTTOM_PAD = L.bottomPad;
+/** Đáy tối đa của bảng: cách vùng chạm thanh dưới ≥ 8. */
+export const PANEL_MAX_BOTTOM = L.maxBottom;
 
 /** Chiều cao bảng khi thân có `bodyHeight` px. */
 export function panelHeightForBody(bodyHeight: number): number {
-  return PANEL_BODY_TOP + bodyHeight + PANEL_CD_GAP + PANEL_CD_LABEL_H + PANEL_BAR_H + PANEL_BAR_GAP + BTN_H + PANEL_PAD;
+  return PANEL_BODY_TOP + bodyHeight + PANEL_ACTION_GAP + BTN_H + PANEL_BOTTOM_PAD;
 }
 
 /** Ước lượng số dòng sau khi xuống dòng theo từ (mỗi dòng ≤ `perLine` ký tự). */
