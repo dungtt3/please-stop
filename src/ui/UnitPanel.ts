@@ -5,17 +5,18 @@ import { activeCooldown } from '../sim/skills';
 import { computeStats } from '../sim/units';
 import type { CommandResult, GameState, Unit } from '../sim/types';
 import { Button, BTN_H } from './BottomBar';
+import { LAYOUT } from './layout';
 import { COLORS, RARITY_COLOR, textStyle } from './theme';
 import {
-  PANEL_ACTION_GAP, PANEL_BAR_DY, PANEL_BAR_H, PANEL_BODY_TOP, PANEL_FONT, PANEL_LINE_SPACING, PANEL_PAD,
-  PANEL_SELL_PAD_Y, PANEL_SELL_W, PANEL_W, PANEL_X, PANEL_Y, panelHeightForBody, unitPanelText,
+  PANEL_ACTION_GAP, PANEL_BAR_DY, PANEL_BAR_H, PANEL_BODY_TOP, PANEL_FONT, PANEL_LINE_SPACING, PANEL_MAX_BODY_H,
+  PANEL_MAX_BODY_LINES, PANEL_PAD, PANEL_SELL_W, PANEL_W, PANEL_X, PANEL_Y, panelHeightForBody, unitPanelText,
 } from './unitPanelText';
 
 const W = PANEL_W;
 const X = PANEL_X;
 const Y = PANEL_Y;
 const PAD = PANEL_PAD;
-const SELL_X = X + W - PAD - PANEL_SELL_W;
+const SELL_X = LAYOUT.panel.sell.rect.x;
 /** Bề rộng thanh hồi chiêu (bên trái nút Bán). */
 const CD_W = W - 2 * PAD - PANEL_SELL_W - 12;
 
@@ -41,13 +42,14 @@ export class UnitPanel {
     this.cdLabel = scene.add.text(X + PAD, 0, '', textStyle({ size: 18, color: COLORS.muted })).setDepth(121);
     this.cdBack = scene.add.rectangle(X + PAD, 0, CD_W, PANEL_BAR_H, 0x000000, 0.6).setOrigin(0).setDepth(121);
     this.cdFill = scene.add.rectangle(X + PAD, 0, 0, PANEL_BAR_H, 0x42a5f5).setOrigin(0).setDepth(122);
-    this.sellBtn = new Button(scene, SELL_X, 0, PANEL_SELL_W, BTN_H, '', () => {
+    // Nút Bán dựng từ LAYOUT (hình + vùng chạm); update() chỉ dời theo chiều dọc, tối đa tới đúng vị trí LAYOUT.
+    this.sellBtn = Button.at(scene, LAYOUT.panel.sell, '', () => {
       const s = this.getState();
       const sel = this.selectedUnit(s);
       if (!sel) return;
       act(sellUnit(s, sel.slot));
       this.deselect();
-    }, { depth: 121, fill: 0x7a4a1e, fontSize: 22, hit: { padY: PANEL_SELL_PAD_Y } });
+    }, { depth: 121, fill: 0x7a4a1e, fontSize: 22 });
     this.setVisible(false);
   }
 
@@ -78,18 +80,20 @@ export class UnitPanel {
     const st = computeStats(cfg, u, modifierOf(s).rangeMult);
     const text = unitPanelText(cfg, u, st);
     this.title.setText(text.title).setColor('#' + RARITY_COLOR[u.rarity].toString(16).padStart(6, '0'));
-    this.body.setText(text.body);
+    // Thân bị chặn trên (cắt dòng) để hàng cuối không thấp hơn nút Bán ở LAYOUT (không đè nút thanh dưới).
+    this.body.setMaxLines(PANEL_MAX_BODY_LINES).setText(text.body);
     const cd = activeCooldown(cfg, u.classId, u.level);
     const frac = cd > 0 ? Math.max(0, Math.min(1, 1 - u.skillCooldown / cd)) : 1;
     // Hàng cuối: nhãn + thanh hồi chiêu bên trái, nút Bán bên phải; vùng chạm Bán nằm gọn trong bảng.
-    const row = this.body.y + this.body.height + PANEL_ACTION_GAP;
+    const bodyH = Math.min(this.body.height, PANEL_MAX_BODY_H);
+    const row = this.body.y + bodyH + PANEL_ACTION_GAP;
     this.cdLabel.setPosition(X + PAD, row).setText(u.skillCooldown > 0 ? `Hồi chiêu: ${u.skillCooldown.toFixed(1)}s` : 'Kỹ năng sẵn sàng');
     this.cdBack.setPosition(X + PAD, row + PANEL_BAR_DY);
     this.cdFill.setPosition(X + PAD, row + PANEL_BAR_DY).setSize(CD_W * frac, PANEL_BAR_H);
     this.sellBtn.bg.setPosition(SELL_X, row);
     this.sellBtn.label.setPosition(SELL_X + PANEL_SELL_W / 2, row + BTN_H / 2);
     this.sellBtn.setText(`Bán (+${Math.floor(u.goldInvested / 2)} vàng)`);
-    this.height = panelHeightForBody(this.body.height);
+    this.height = panelHeightForBody(bodyH);
     this.bg.setSize(W, this.height);
     this.sellBtn.setDim(s.phase === 'won' || s.phase === 'lost');
   }

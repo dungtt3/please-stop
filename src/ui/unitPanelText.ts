@@ -28,6 +28,14 @@ export const PANEL_BOTTOM_PAD = L.bottomPad;
 /** Đáy tối đa của bảng: cách vùng chạm thanh dưới ≥ 8. */
 export const PANEL_MAX_BOTTOM = L.maxBottom;
 
+/**
+ * Thân bảng tối đa (px) để hàng cuối (nhãn + nút Bán) không thấp hơn vị trí nút Bán ở `LAYOUT.panel.sell`
+ * (đáy bảng khi đó đúng bằng `PANEL_MAX_BOTTOM`, cách vùng chạm thanh dưới ≥ 8).
+ */
+export const PANEL_MAX_BODY_H = L.sell.rect.y - PANEL_ACTION_GAP - PANEL_Y - PANEL_BODY_TOP;
+/** Số dòng thân tối đa theo ước lượng thận trọng. */
+export const PANEL_MAX_BODY_LINES = Math.floor(PANEL_MAX_BODY_H / PANEL_LINE_PX);
+
 /** Chiều cao bảng khi thân có `bodyHeight` px. */
 export function panelHeightForBody(bodyHeight: number): number {
   return PANEL_BODY_TOP + bodyHeight + PANEL_ACTION_GAP + BTN_H + PANEL_BOTTOM_PAD;
@@ -57,6 +65,20 @@ export function estimateLines(text: string, perLine = PANEL_CHARS_PER_LINE): num
   return total;
 }
 
+/** Cắt `body` (thêm "…") cho tới khi ước lượng không quá `maxLines` dòng; chữ do admin sửa không đẩy nút Bán xuống thanh dưới. */
+export function fitBody(body: string, maxLines: number = PANEL_MAX_BODY_LINES, perLine: number = PANEL_CHARS_PER_LINE): string {
+  if (estimateLines(body, perLine) <= maxLines) return body;
+  const cut = (n: number): string => body.slice(0, n).trimEnd() + '…';
+  let lo = 0;
+  let hi = body.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (estimateLines(cut(mid), perLine) <= maxLines) lo = mid;
+    else hi = mid - 1;
+  }
+  return cut(lo);
+}
+
 /** Số liệu kỹ năng lấy trực tiếp từ config (không ghi cứng trong mô tả). */
 export function skillNumbers(cfg: GameConfig, id: ClassId): string {
   const k = cfg.skills;
@@ -84,5 +106,5 @@ export function unitPanelText(cfg: GameConfig, u: Unit, st: UnitStats): { title:
     `Kỹ năng: ${def.active}`,
     skillNumbers(cfg, u.classId),
   ];
-  return { title: `${def.name} ★${u.level} · ${RARITY_NAME[u.rarity]}`, body: lines.join('\n') };
+  return { title: `${def.name} ★${u.level} · ${RARITY_NAME[u.rarity]}`, body: fitBody(lines.join('\n')) };
 }
