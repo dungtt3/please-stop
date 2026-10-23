@@ -6,6 +6,8 @@ import { COLORS, RARITY_COLOR, textStyle } from '../ui/theme';
 import type { VisualRegistry } from './loader';
 import type { VisualKey } from './manifest';
 import { applyEntry } from './applyEntry';
+import { CLASS_SHAPE, ENEMY_SHAPE, RARITY_PIPS, shapePoints } from './shapes';
+import type { ShapeKind } from './shapes';
 import { formatNum, hpFraction, hpValue } from './viewMath';
 
 export const UNIT_DEPTH = 10;
@@ -14,12 +16,66 @@ export const MINION_DEPTH = 13;
 /** Hoạt ảnh chết tối đa (ms); hết giờ view tự hủy dù hoạt ảnh chưa xong. */
 export const DIE_MAX_MS = 600;
 
+/** Hệ số bán kính để các hình quái có diện tích gần bằng hình tròn thường. */
+const ENEMY_SCALE: Partial<Record<ShapeKind, number>> = { triangle: 1.3, roundedSquare: 1.25 };
+
 const CD_H = 3;
 const CD_CHARGING = 0x42a5f5;
 const CD_READY = 0xfff59d;
 const ENEMY_BAR_H = 6;
 const ENEMY_BAR_COLOR = 0xe53935;
 const MINION_BAR_COLOR = 0x66bb6a;
+
+/** Tô (và viền nếu có) một hình khối bằng Graphics; hình tròn dùng fillCircle. */
+function paintShape(
+  g: Phaser.GameObjects.Graphics, kind: ShapeKind, cx: number, cy: number, r: number, angle: number,
+  fill: { color: number; alpha: number } | null, stroke: { width: number; color: number; alpha: number } | null,
+): void {
+  const pts = kind === 'circle' ? null : shapePoints(kind, cx, cy, r, angle);
+  if (fill) {
+    g.fillStyle(fill.color, fill.alpha);
+    if (pts) g.fillPoints(pts, true, true);
+    else g.fillCircle(cx, cy, r);
+  }
+  if (stroke) {
+    g.lineStyle(stroke.width, stroke.color, stroke.alpha);
+    if (pts) g.strokePoints(pts, true, true);
+    else g.strokeCircle(cx, cy, r);
+  }
+}
+
+/** Bán kính ngoại tiếp của hình nhân vật trên ô `tile` (hình vuông giữ nguyên kích cỡ cũ). */
+function unitShapeRadius(kind: ShapeKind, tile: number): number {
+  return kind === 'square' ? ((tile - 10) / 2) * Math.SQRT2 : tile * 0.46;
+}
+
+/** Hướng đỉnh đầu tiên: tam giác của cung thủ chĩa lên trên. */
+function unitShapeAngle(kind: ShapeKind): number {
+  return kind === 'triangle' ? -Math.PI / 2 : 0;
+}
+
+/** Hình khối của nhân vật: màu lớp + viền độ hiếm. `filled=false` (đang dùng sprite) thì chỉ vẽ viền. Toạ độ tuyệt đối theo `cx, cy`. */
+export function drawUnitBody(
+  g: Phaser.GameObjects.Graphics, classId: ClassId, color: number, rarity: Rarity, tile: number,
+  cx: number, cy: number, filled: boolean, alpha = 1,
+): void {
+  const kind = CLASS_SHAPE[classId];
+  paintShape(
+    g, kind, cx, cy, unitShapeRadius(kind, tile), unitShapeAngle(kind),
+    filled ? { color, alpha } : null, { width: 3, color: RARITY_COLOR[rarity], alpha },
+  );
+}
+
+/** Chấm độ hiếm (rare 1, epic 2) ở góc trên phải ô, vẽ đè lên sprite. */
+export function drawRarityPips(g: Phaser.GameObjects.Graphics, rarity: Rarity, tile: number, cx: number, cy: number, alpha = 1): void {
+  const n = RARITY_PIPS[rarity];
+  for (let i = 0; i < n; i++) {
+    const px = cx + tile / 2 - 8 - i * 11;
+    const py = cy - tile / 2 + 8;
+    g.fillStyle(RARITY_COLOR[rarity], alpha).fillCircle(px, py, 5);
+    g.lineStyle(2, 0xffffff, alpha).strokeCircle(px, py, 5);
+  }
+}
 
 const PRIO_ATTACK = 1;
 const PRIO_SKILL = 2;
@@ -133,7 +189,10 @@ export class UnitView {
   readonly root: Phaser.GameObjects.Container;
   /** Dấu lần sync cuối thấy unit này (BoardViews dùng để hủy view thừa). */
   seen = 0;
-  private frame: Phaser.GameObjects.Rectangle;
+  private shape: Phaser.GameObjects.Graphics;
+  private pips: Phaser.GameObjects.Graphics;
+  /** Hình khối được tô màu lớp (false khi sprite đang hiện: chỉ còn viền độ hiếm). */
+  private filled = true;
   private actor: Actor | null;
   private stars: Phaser.GameObjects.Text;
   private cd: Bar;
@@ -142,23 +201,37 @@ export class UnitView {
   private ready: boolean | null = null;
   private dragged: boolean | null = null;
 
-  constructor(scene: Phaser.Scene, v: VisualRegistry, private readonly classId: ClassId, color: number, tile: number) {
+  constructor(
+    scene: Phaser.Scene, v: VisualRegistry, private readonly classId: ClassId, private readonly color: number,
+    private readonly tile: number,
+  ) {
     const sz = tile - 10;
-    // Hình vuông màu lớp + viền độ hiếm. Có sprite nền thì chỉ giữ viền độ hiếm (thông tin để gộp).
-    this.frame = scene.add.rectangle(0, 0, sz, sz, color);
+    // Hình khối theo lớp (màu lớp) + viền độ hiếm + chấm độ hiếm. Có sprite nền thì chỉ giữ viền và chấm độ hiếm (thông tin để gộp).
+    this.shape = scene.add.graphics();
+    this.pips = scene.add.graphics();
     const showShape = (shown: boolean): void => {
-      this.frame.isFilled = !shown;
+      this.filled = !shown;
+      this.redraw();
     };
     this.actor = makeActor(scene, v, `unit.${classId}.idle`, [`unit.${classId}.attack`, `unit.${classId}.skill`], tile, showShape);
-    if (this.actor && v.has(`unit.${classId}.idle`)) this.frame.isFilled = false;
+    if (this.actor && v.has(`unit.${classId}.idle`)) this.filled = false;
     this.cd = new Bar(scene, -sz / 2, tile / 2 - CD_H, sz, CD_H, CD_CHARGING);
     this.stars = scene.add
       .text(-tile / 2 + 4, -tile / 2 + 3, '', textStyle({ size: 14, color: '#fff176', bold: true }))
       .setOrigin(0, 0);
-    const parts: Phaser.GameObjects.GameObject[] = [this.frame];
+    const parts: Phaser.GameObjects.GameObject[] = [this.shape];
     if (this.actor) parts.push(this.actor.sprite);
-    parts.push(this.cd.back, this.cd.fill, this.stars);
+    parts.push(this.cd.back, this.cd.fill, this.pips, this.stars);
     this.root = scene.add.container(0, 0, parts).setDepth(UNIT_DEPTH);
+  }
+
+  /** Vẽ lại hình khối và chấm độ hiếm (chỉ khi độ hiếm / chế độ tô đổi). */
+  private redraw(): void {
+    this.shape.clear();
+    this.pips.clear();
+    if (!this.rarity) return;
+    drawUnitBody(this.shape, this.classId, this.color, this.rarity, this.tile, 0, 0, this.filled);
+    drawRarityPips(this.pips, this.rarity, this.tile, 0, 0);
   }
 
   update(x: number, y: number, u: Unit, cdFrac: number, dragged: boolean): void {
@@ -169,7 +242,7 @@ export class UnitView {
     }
     if (u.rarity !== this.rarity) {
       this.rarity = u.rarity;
-      this.frame.setStrokeStyle(3, RARITY_COLOR[u.rarity]);
+      this.redraw();
     }
     this.cd.set(cdFrac);
     const ready = cdFrac >= 1;
@@ -199,13 +272,19 @@ export class UnitView {
 export class EnemyView {
   readonly root: Phaser.GameObjects.Container;
   seen = 0;
-  private body: Phaser.GameObjects.Arc;
+  private body: Phaser.GameObjects.Graphics;
   private burn: Phaser.GameObjects.Arc;
   private actor: Actor | null;
   private bar: Bar;
   private hpText: Phaser.GameObjects.Text;
   private hp = -1;
   private burning: boolean | null = null;
+  /** Hướng đi (rad, hệ màn hình) cho tam giác quái nhanh; suy ra từ vị trí khung trước. */
+  private heading = 0;
+  private lastX = 0;
+  private lastY = 0;
+  private hasLast = false;
+  private readonly shapeR: number;
   private dieTimer: Phaser.Time.TimerEvent | null = null;
   private gone = false;
 
@@ -213,11 +292,13 @@ export class EnemyView {
     private readonly scene: Phaser.Scene,
     private readonly v: VisualRegistry,
     private readonly kind: EnemyKind,
-    color: number,
+    private readonly color: number,
     private readonly tile: number,
   ) {
-    const r = (kind === 'boss' ? 0.5 : 0.25) * tile;
-    this.body = scene.add.circle(0, 0, r, color);
+    const r = (kind === 'boss' ? 0.5 : 0.25) * tile * (ENEMY_SCALE[ENEMY_SHAPE[kind]] ?? 1);
+    this.shapeR = r;
+    this.body = scene.add.graphics();
+    this.drawBody();
     const walk: VisualKey = `enemy.${kind}.walk`;
     this.actor = v.has(walk) ? new Actor(scene, v, walk, tile) : null;
     if (this.actor) this.body.setVisible(false);
@@ -235,8 +316,28 @@ export class EnemyView {
     this.root = scene.add.container(0, 0, parts).setDepth(ENEMY_DEPTH);
   }
 
+  private drawBody(): void {
+    this.body.clear();
+    paintShape(this.body, ENEMY_SHAPE[this.kind], 0, 0, this.shapeR, this.heading, { color: this.color, alpha: 1 }, null);
+  }
+
   update(x: number, y: number, e: Enemy): void {
     this.root.setPosition(x, y);
+    if (this.kind === 'fast') {
+      if (this.hasLast) {
+        const dx = x - this.lastX, dy = y - this.lastY;
+        if (dx * dx + dy * dy > 0.01) {
+          const a = Math.atan2(dy, dx);
+          if (Math.abs(a - this.heading) > 0.01) {
+            this.heading = a;
+            this.drawBody();
+          }
+        }
+      }
+      this.lastX = x;
+      this.lastY = y;
+      this.hasLast = true;
+    }
     const burning = e.burn !== null;
     if (burning !== this.burning) {
       this.burning = burning;

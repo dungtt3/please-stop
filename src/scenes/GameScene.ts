@@ -26,11 +26,12 @@ import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { boardTile, topBarOwns } from '../ui/layout';
-import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, RARITY_COLOR, TOP_BAR_H, textStyle } from '../ui/theme';
+import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, TOP_BAR_H, textStyle } from '../ui/theme';
 import { BossBar } from '../ui/BossBar';
 import { BoardViews } from '../visuals/BoardViews';
 import { Effects } from '../visuals/effects';
 import { getVisuals } from '../visuals/loader';
+import { drawRarityPips, drawUnitBody } from '../visuals/views';
 
 const DRAG_THRESHOLD = 8;
 
@@ -402,10 +403,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawUnit(g: Phaser.GameObjects.Graphics, u: Unit, cx: number, cy: number, alpha = 1): void {
-    const sz = this.tileSize - 10;
     const col = this.state.config.classes[u.classId].color;
-    g.fillStyle(col, alpha).fillRect(cx - sz / 2, cy - sz / 2, sz, sz);
-    g.lineStyle(3, RARITY_COLOR[u.rarity], alpha).strokeRect(cx - sz / 2, cy - sz / 2, sz, sz);
+    drawUnitBody(g, u.classId, col, u.rarity, this.tileSize, cx, cy, true, alpha);
+    drawRarityPips(g, u.rarity, this.tileSize, cx, cy, alpha);
   }
 
   private render(): void {
