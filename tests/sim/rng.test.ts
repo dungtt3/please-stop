@@ -9,3 +9,9 @@ test('int nằm trong khoảng, bao gồm 2 đầu', () => {
   for (let i = 0; i < 1000; i++) seen.add(r.int(1, 3));
   expect([...seen].sort()).toEqual([1, 2, 3]);
 });
+test('state() khôi phục được dãy số', () => {
+  const a = createRng(42);
+  for (let i = 0; i < 7; i++) a.next();
+  const b = createRng(a.state());
+  expect([b.next(), b.next(), b.next()]).toEqual([a.next(), a.next(), a.next()]);
+});

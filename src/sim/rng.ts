@@ -7,6 +7,8 @@ export interface Rng {
   chance(p: number): boolean;
   pick<T>(arr: readonly T[]): T;
   shuffle<T>(arr: T[]): T[];
+  /** Trạng thái nội bộ (uint32); createRng(state) tiếp tục đúng dãy. */
+  state(): number;
 }
 
 /** mulberry32 */
@@ -32,6 +34,7 @@ export function createRng(seed: number): Rng {
       }
       return arr;
     },
+    state: () => a,
   };
   return rng;
 }
