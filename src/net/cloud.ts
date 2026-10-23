@@ -1,4 +1,5 @@
 import type { GameConfig } from '../config';
+import { parsePresetRows, type PresetRow } from '../admin/presets';
 import { getSupabase } from './supabase';
 
 export const TIMEOUT_MS = 4000;
@@ -12,6 +13,17 @@ export interface ScoreRow {
 
 export type CloudWrite = { ok: true; updatedAt: string } | { ok: false; error: 'code' | 'network' | 'offline' };
 export type CloudClear = { ok: true } | { ok: false; error: 'code' | 'network' | 'offline' };
+
+export type PresetList = { ok: true; presets: PresetRow[] } | { ok: false; error: 'code' | 'network' };
+export type PresetSave = { ok: true; savedAt: string } | { ok: false; error: 'code' | 'network' | 'full' };
+export type PresetDelete = { ok: true; found: boolean } | { ok: false; error: 'code' | 'network' };
+
+/** Ba thao tác bộ cấu hình mà ConfigMenu cần (mã quản trị đã được gắn sẵn). */
+export interface PresetsApi {
+  list(): Promise<PresetList>;
+  save(name: string, cfg: GameConfig): Promise<PresetSave>;
+  remove(name: string): Promise<PresetDelete>;
+}
 
 class TimeoutError extends Error {}
 
@@ -84,6 +96,45 @@ export async function clearActiveConfig(code: string): Promise<CloudClear> {
     const { error } = await withTimeout((signal) => sb.rpc('ps_clear_config', { p_code: code }).abortSignal(signal));
     if (error) return { ok: false, error: error.code === '28000' ? 'code' : 'network' };
     return { ok: true };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+export async function listPresets(code: string): Promise<PresetList> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'network' };
+  try {
+    const { data, error } = await withTimeout((signal) => sb.rpc('ps_list_presets', { p_code: code }).abortSignal(signal));
+    if (error) return { ok: false, error: error.code === '28000' ? 'code' : 'network' };
+    const presets = parsePresetRows(data);
+    return presets ? { ok: true, presets } : { ok: false, error: 'network' };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+export async function savePreset(code: string, name: string, cfg: GameConfig): Promise<PresetSave> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'network' };
+  try {
+    const { data, error } = await withTimeout((signal) =>
+      sb.rpc('ps_save_preset', { p_code: code, p_name: name, p_config: cfg }).abortSignal(signal),
+    );
+    if (error) return { ok: false, error: error.code === '28000' ? 'code' : error.code === 'PS413' ? 'full' : 'network' };
+    return { ok: true, savedAt: typeof data === 'string' ? data : new Date().toISOString() };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+export async function deletePreset(code: string, name: string): Promise<PresetDelete> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'network' };
+  try {
+    const { data, error } = await withTimeout((signal) => sb.rpc('ps_delete_preset', { p_code: code, p_name: name }).abortSignal(signal));
+    if (error) return { ok: false, error: error.code === '28000' ? 'code' : 'network' };
+    return { ok: true, found: data === true };
   } catch {
     return { ok: false, error: 'network' };
   }
