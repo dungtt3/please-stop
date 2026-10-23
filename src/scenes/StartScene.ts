@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { authAvailable, currentAccount, PROVIDER_LABEL, PROVIDERS, signIn, signOut, type Account } from '../net/auth';
 import { recordRun } from '../net/cloud';
+import { readBest, recordBest } from '../save/best';
 import { supabaseSaves } from '../net/saves';
 import { SaveManager, type StartInfo } from '../save/SaveManager';
 import { browserStore } from '../settings/configStore';
@@ -16,6 +17,12 @@ const MAIN_FILL = 0x2e7d32;
 const DANGER_FILL = 0xc62828;
 const MODAL_DEPTH = 600;
 const L = LAYOUT.start;
+
+/** Một ván bỏ dở/mất được chốt ở màn bắt đầu: ghi ps_runs và cập nhật kỷ lục cá nhân đúng một lần cho ván đó. */
+function endRun(stats: ReturnType<typeof runStatsOf>): void {
+  void recordRun(stats);
+  recordBest(browserStore(), { wave: stats.waveReached, kills: stats.kills, won: stats.won });
+}
 
 interface Choice {
   label: string;
@@ -100,7 +107,7 @@ export class StartScene extends Phaser.Scene {
     if (account) {
       const c = manager.checkGuest();
       guest = c.guest;
-      if (c.lostGuest) void recordRun(runStatsOf(c.lostGuest));
+      if (c.lostGuest) endRun(runStatsOf(c.lostGuest));
     }
     let info = await manager.load();
     if (dead()) return;
@@ -137,7 +144,7 @@ export class StartScene extends Phaser.Scene {
           ])) === 0;
         if (dead()) return;
         if (keepDevice) {
-          void recordRun(runStatsOf(info.save));
+          endRun(runStatsOf(info.save));
           void manager.end(info.save.runId);
           const r = await manager.adoptGuest();
           if (dead()) return;
@@ -146,7 +153,7 @@ export class StartScene extends Phaser.Scene {
           if (dead()) return;
           if (r !== 'ok' && alreadyAdopted(info)) manager.dropGuest();
         } else {
-          void recordRun(runStatsOf(guest));
+          endRun(runStatsOf(guest));
           manager.dropGuest();
         }
       }
@@ -186,7 +193,7 @@ export class StartScene extends Phaser.Scene {
       const onClick = this.guarded(async () => {
         const yes = (await this.ask('Bỏ ván đang chơi dở?', [{ label: 'Có', fill: DANGER_FILL }, { label: 'Không' }])) === 0;
         if (!yes || stale()) return;
-        void recordRun(runStatsOf(save));
+        endRun(runStatsOf(save));
         void manager.end(save.runId);
         this.enter(manager, account, { kind: 'new' });
         return true;
@@ -213,6 +220,20 @@ export class StartScene extends Phaser.Scene {
         this.enter(manager, account, { kind: 'new' });
         return true;
       }));
+    }
+
+    // Kỷ lục cá nhân; lần đầu (chưa có kỷ lục, chưa có ván dở) thì một dòng gợi ý (spec mục 8).
+    const best = readBest(browserStore());
+    if (best && best.wave >= 1) {
+      this.add
+        .text(cx, L.recordY, `Kỷ lục: Wave ${best.wave}${best.won ? ' · Thắng' : ''}`, textStyle({ size: 22, color: COLORS.text }))
+        .setOrigin(0.5);
+    } else if (!best && info.kind === 'none') {
+      this.add
+        .text(cx, L.hintY, 'Triệu hồi nhân vật, kéo hai nhân vật giống nhau để gộp, chặn quái đến cửa Ra.', textStyle({
+          size: 22, color: COLORS.muted, align: 'center', wrap: GAME_W - 200,
+        }))
+        .setOrigin(0.5);
     }
 
     if (!authAvailable()) return;

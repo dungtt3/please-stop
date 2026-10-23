@@ -21,6 +21,7 @@ import { browserStore } from '../settings/configStore';
 import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
 import { recordRun, TIMEOUT_MS } from '../net/cloud';
+import { recordBest } from '../save/best';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
@@ -76,6 +77,8 @@ export class GameScene extends Phaser.Scene {
   /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
   private shield = new PointerShield();
   private runRecorded = false;
+  /** Ván vừa kết thúc ở màn này phá kỷ lục cá nhân (kỷ lục cũ được đọc trước khi ghi). */
+  private newBest = false;
   /** Đã phát tiếng thắng/thua của ván này (chỉ một lần). */
   private endSounded = false;
   private saver!: RunSaver;
@@ -107,6 +110,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedUnitId = null;
     this.drag = null;
     this.runRecorded = false;
+    this.newBest = false;
     this.endSounded = false;
     const cfg = this.resolveCfg().config;
     if (start.kind === 'new') {
@@ -217,6 +221,7 @@ export class GameScene extends Phaser.Scene {
   restart(): void {
     this.state = createGame(Date.now(), this.resolveCfg().config);
     this.runRecorded = false;
+    this.newBest = false;
     this.endSounded = false;
     this.halted = false;
     this.conflictTimer?.remove(false);
@@ -265,6 +270,8 @@ export class GameScene extends Phaser.Scene {
     this.runRecorded = true;
     const s = this.state;
     void recordRun({ waveReached: s.wave, won, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
+    // Cùng chỗ và cùng guard với recordRun: mỗi ván cập nhật kỷ lục đúng một lần.
+    this.newBest = recordBest(browserStore(), { wave: s.wave, kills: s.kills, won }).isNew;
     this.saver.end();
   }
 
@@ -393,7 +400,7 @@ export class GameScene extends Phaser.Scene {
     this.hand.update(s);
     this.unitPanel.update(s, this.selectedUnitId);
     this.quizModal.update(s);
-    this.resultScreen.update(s);
+    this.resultScreen.update(s, this.newBest);
     for (const e of s.events) this.handleEvent(e);
     s.events.length = 0;
   }

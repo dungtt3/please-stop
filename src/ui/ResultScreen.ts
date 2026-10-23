@@ -33,6 +33,7 @@ export class ResultScreen {
   private shade: Phaser.GameObjects.Rectangle;
   private title: Phaser.GameObjects.Text;
   private info: Phaser.GameObjects.Text;
+  private newBest: Phaser.GameObjects.Text;
   private status: Phaser.GameObjects.Text;
   private boardTitle: Phaser.GameObjects.Text;
   private cols: Phaser.GameObjects.Text[];
@@ -59,6 +60,9 @@ export class ResultScreen {
     this.info = scene.add
       .text(GAME_W / 2, R.infoY, '', textStyle({ size: 24, color: COLORS.text, align: 'center' }))
       .setOrigin(0.5).setDepth(501);
+    this.newBest = scene.add
+      .text(0, R.infoY, 'Kỷ lục mới!', textStyle({ size: 22, bold: true, color: COLORS.gold }))
+      .setOrigin(0, 0.5).setDepth(501).setVisible(false);
     this.status = scene.add
       .text(GAME_W / 2, R.statusY, '', textStyle({ size: 22, color: COLORS.muted }))
       .setOrigin(0.5).setDepth(501);
@@ -85,6 +89,7 @@ export class ResultScreen {
     this.shade.setVisible(v);
     this.title.setVisible(v);
     this.info.setVisible(v);
+    if (!v) this.newBest.setVisible(false);
     this.status.setVisible(v);
     this.boardTitle.setVisible(v);
     for (const c of this.cols) c.setVisible(v);
@@ -198,7 +203,7 @@ export class ResultScreen {
     f.send.style.minWidth = `${R.send.rect.w * k}px`;
   }
 
-  update(s: GameState): void {
+  update(s: GameState, isNewBest = false): void {
     const over = s.phase === 'won' || s.phase === 'lost';
     if (!over) {
       if (this.visible) {
@@ -218,8 +223,11 @@ export class ResultScreen {
         kills: Math.max(0, Math.min(1_000_000, s.kills)),
         won: s.phase === 'won',
       };
-      this.title.setText(s.phase === 'won' ? 'Chiến thắng!' : 'Thất bại').setColor(s.phase === 'won' ? '#ffd54f' : '#ef5350');
-      this.info.setText(`Wave đạt được: ${s.wave}/${s.config.economy.totalWaves}   ·   Quái đã giết: ${formatNum(s.kills)}`);
+      // Tiêu đề trung tính (spec mục 7): thắng vàng, thua màu chữ thường, không đỏ.
+      this.title.setText(s.phase === 'won' ? 'Chiến thắng!' : 'Kết thúc').setColor(s.phase === 'won' ? '#ffd54f' : COLORS.text);
+      this.info.setText(`Bạn đã đến wave ${s.wave}/${s.config.economy.totalWaves} · Quái đã giết ${formatNum(s.kills)}`);
+      // Nhãn nhỏ cạnh dòng wave, không lấn át; chỉ cho ván vừa kết thúc ở màn này.
+      this.newBest.setVisible(isNewBest).setX(this.info.x + this.info.width / 2 + 16);
       this.setStatus('Nhập tên để lên bảng xếp hạng', COLORS.muted);
       this.cols[0].setText('Đang tải...');
       this.cols[1].setText('');
