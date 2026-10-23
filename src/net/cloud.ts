@@ -32,17 +32,34 @@ export async function withTimeout<T>(fn: (signal: AbortSignal) => PromiseLike<T>
   }
 }
 
-export async function fetchActiveConfig(): Promise<{ config: unknown; updatedAt: string } | null> {
+export type CloudConfigFetch = { kind: 'ok'; config: unknown; updatedAt: string } | { kind: 'empty' } | { kind: 'error' };
+
+/** Phân biệt "cloud chưa có cấu hình" (empty) với lỗi mạng/hết giờ/thiếu Supabase (error). Không bao giờ ném. */
+export async function fetchActiveConfig(): Promise<CloudConfigFetch> {
   const sb = getSupabase();
-  if (!sb) return null;
+  if (!sb) return { kind: 'error' };
   try {
     const { data, error } = await withTimeout((signal) =>
       sb.from('ps_configs').select('config, updated_at').eq('slot', 'active').abortSignal(signal).maybeSingle(),
     );
-    if (error || !data) return null;
-    return { config: data.config as unknown, updatedAt: String(data.updated_at) };
+    if (error) return { kind: 'error' };
+    if (!data) return { kind: 'empty' };
+    return { kind: 'ok', config: data.config as unknown, updatedAt: String(data.updated_at) };
   } catch {
-    return null;
+    return { kind: 'error' };
+  }
+}
+
+/** Kiểm mã quản trị ở server (rpc ps_admin_check). Không bao giờ ném. */
+export async function checkAdminCode(code: string): Promise<'ok' | 'wrong' | 'offline'> {
+  const sb = getSupabase();
+  if (!sb) return 'offline';
+  try {
+    const { data, error } = await withTimeout((signal) => sb.rpc('ps_admin_check', { p_code: code }).abortSignal(signal));
+    if (error) return 'offline';
+    return data === true ? 'ok' : 'wrong';
+  } catch {
+    return 'offline';
   }
 }
 

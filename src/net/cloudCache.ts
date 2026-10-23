@@ -9,14 +9,10 @@ let cached: CloudSnapshot | null = null;
 
 export const getCloudCache = (): CloudSnapshot | null => cached;
 
-/** Tải cấu hình cloud mới nhất vào cache; lỗi thì giữ cache cũ. Không bao giờ ném. */
+/** Tải cấu hình cloud mới nhất vào cache; lỗi mạng thì giữ cache cũ. Không bao giờ ném. */
 export async function refreshCloudCache(): Promise<CloudSnapshot | null> {
   const r = await fetchActiveConfig();
-  if (r) cached = r;
+  if (r.kind === 'ok') cached = { config: r.config, updatedAt: r.updatedAt };
+  else if (r.kind === 'empty') cached = null; // cloud đã gỡ cấu hình: về mặc định
   return cached;
-}
-
-/** Xóa cache (sau khi gỡ cấu hình cloud) để ván sau về mặc định ngay. */
-export function clearCloudCache(): void {
-  cached = null;
 }

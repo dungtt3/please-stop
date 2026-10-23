@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import type { GameConfig } from '../config';
 import { createGame } from '../sim/state';
 import { restoreGame, type RunSave } from '../sim/save';
 import { tick } from '../sim/game';
@@ -16,14 +15,13 @@ import { UnitPanel } from '../ui/UnitPanel';
 import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
 import { Banner, Toast } from '../ui/Toast';
-import { closeConfigMenu, openConfigMenu } from '../ui/ConfigMenu';
-import { browserStore, loadSavedConfig, resetConfig, saveConfig } from '../settings/configStore';
-import { resolveConfig, type ConfigSource } from '../settings/resolveConfig';
+import { browserStore } from '../settings/configStore';
+import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
-import { clearActiveConfig, recordRun, saveActiveConfig } from '../net/cloud';
+import { recordRun } from '../net/cloud';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
-import { clearCloudCache, getCloudCache, refreshCloudCache } from '../net/cloudCache';
+import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 
 const DRAG_THRESHOLD = 8;
@@ -58,7 +56,6 @@ export class GameScene extends Phaser.Scene {
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
-  private source: ConfigSource = 'default';
   private runRecorded = false;
   private saver!: RunSaver;
   private manager!: SaveManager;
@@ -145,7 +142,6 @@ export class GameScene extends Phaser.Scene {
       this.saver.stop();
       this.conflictTimer?.remove(false);
       this.conflictTimer = null;
-      closeConfigMenu();
     });
 
     if (start.kind === 'new') this.saver.beginNew(this.state);
@@ -155,16 +151,13 @@ export class GameScene extends Phaser.Scene {
 
   private onSaveConflict(): void {
     this.halted = true;
-    closeConfigMenu();
     this.banner.show('Ván này đã được chơi ở thiết bị khác');
     this.conflictTimer = this.time.delayedCall(2000, () => this.scene.start('Start'));
   }
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
-  restart(cfg?: GameConfig): void {
-    const r = this.resolveCfg();
-    this.state = createGame(Date.now(), cfg ?? r.config);
-    if (cfg) this.source = 'local';
+  restart(): void {
+    this.state = createGame(Date.now(), this.resolveCfg().config);
     this.runRecorded = false;
     this.halted = false;
     this.conflictTimer?.remove(false);
@@ -183,60 +176,16 @@ export class GameScene extends Phaser.Scene {
     this.drawBoard();
   }
 
+  /** Người chơi luôn dùng cấu hình cloud (hoặc mặc định nếu cloud trống/lỗi). */
   private resolveCfg(): ReturnType<typeof resolveConfig> {
-    const r = resolveConfig({ local: loadSavedConfig(browserStore()), cloud: getCloudCache()?.config ?? null });
-    this.source = r.source;
+    const r = resolveConfig({ cloud: getCloudCache()?.config ?? null });
     if (r.errors.length) console.warn('Cấu hình cloud có giá trị không hợp lệ, đã dùng mặc định cho các trường đó:', r.errors);
     return r;
   }
 
-  /** Chỉ tạo bản riêng khi khác cấu hình đang đến từ cloud/mặc định (hoặc đã có bản riêng). */
-  private needsOverride(cfg: GameConfig): boolean {
-    if (loadSavedConfig(browserStore())) return true;
-    const base = resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config;
-    return configHash(cfg) !== configHash(base);
-  }
-
-  /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
+  /** Nút ⚙: tạm thời không làm gì (popup tạm dừng sẽ được nối ở đây). */
   private openMenu(): void {
-    if (this.menuOpen || this.halted) return;
-    this.menuOpen = true;
-    this.drag = null;
-    openConfigMenu({
-      current: structuredClone(this.state.config),
-      source: this.source,
-      hasOverride: () => loadSavedConfig(browserStore()) !== null,
-      cloudUpdatedAt: getCloudCache()?.updatedAt ?? null,
-      fallback: () => resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config,
-      onCloudSave: async (code, cfg) => {
-        const r = await saveActiveConfig(code, cfg);
-        if (r.ok) await refreshCloudCache();
-        return r;
-      },
-      onCloudClear: async (code) => {
-        const r = await clearActiveConfig(code);
-        if (r.ok) clearCloudCache();
-        return r;
-      },
-      onSave: (cfg) => (this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true),
-      runActive: () => this.saver.live,
-      onApplyAndRestart: (cfg) => {
-        // Bỏ ván đang chơi dở: tính thua, xóa bản lưu rồi mới tạo ván mới.
-        if (this.saver.live) {
-          const s = this.state;
-          this.runRecorded = true;
-          void recordRun({ waveReached: s.wave, won: false, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
-          this.saver.end();
-        }
-        const saved = this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true;
-        this.restart(cfg);
-        if (!saved) this.toast.show('Không lưu được cấu hình — chỉ áp dụng cho ván này');
-      },
-      onReset: () => resetConfig(browserStore()),
-      onClose: () => {
-        this.menuOpen = false;
-      },
-    });
+    /* chưa có popup */
   }
 
   toScreen(v: Vec): { x: number; y: number } {

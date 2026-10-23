@@ -184,17 +184,6 @@ export function loadConfig(store: KeyValueStore | null | undefined): GameConfig 
   }
 }
 
-/** Bản người dùng đã lưu trong trình duyệt; null nếu chưa có hoặc hỏng. */
-export function loadSavedConfig(store: KeyValueStore | null | undefined): GameConfig | null {
-  try {
-    const raw = store?.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return mergeConfig(DEFAULT_CONFIG, JSON.parse(raw)).config;
-  } catch {
-    return null;
-  }
-}
-
 /** Trả false nếu không ghi được (vd. bị chặn lưu trữ). */
 export function saveConfig(store: KeyValueStore | null | undefined, cfg: GameConfig): boolean {
   try {
