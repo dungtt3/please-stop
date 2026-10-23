@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { applyCard, discardCard } from '../sim/commands';
 import type { Card, CommandResult, GameState } from '../sim/types';
+import { motion } from '../settings/motion';
 import { Button } from './BottomBar';
 import { LAYOUT } from './layout';
 import { cardLabel, COLORS, RARITY_COLOR, RARITY_NAME, textStyle } from './theme';
@@ -10,6 +11,8 @@ const CARD_W = H.cardW;
 const CARD_H = H.cardH;
 const MAX_CARDS = H.maxCards;
 const DRAG_THRESHOLD = 8;
+const FLASH_BLINK_MS = 900;
+const FLASH_STATIC_MS = 600;
 
 interface Slot {
   bg: Phaser.GameObjects.Rectangle;
@@ -68,7 +71,8 @@ export class Hand {
   }
 
   flash(cardId: number): void {
-    this.flashUntil.set(cardId, this.scene.time.now + 900);
+    // Giảm chuyển động: viền sáng tĩnh 600 ms thay cho nhấp nháy 900 ms.
+    this.flashUntil.set(cardId, this.scene.time.now + (motion.reduced ? FLASH_STATIC_MS : FLASH_BLINK_MS));
   }
 
   reset(): void {
@@ -148,10 +152,11 @@ export class Hand {
       const lift = selected ? H.lift : 0;
       const { x, y: Y } = H.cards[i].rect;
       const flashing = (this.flashUntil.get(card.id) ?? 0) > now;
-      const blink = flashing ? 0.5 + 0.5 * Math.sin(now / 60) : 0;
+      const calm = motion.reduced;
+      const blink = flashing && !calm ? 0.5 + 0.5 * Math.sin(now / 60) : 0;
       sl.bg.setPosition(x, Y - lift);
-      sl.bg.setFillStyle(flashing ? 0x6a6a3a : selected ? 0x363d57 : 0x252a3a, 1);
-      sl.bg.setStrokeStyle(selected || flashing ? 6 : 4, flashing && blink > 0.5 ? COLORS.highlight : RARITY_COLOR[card.rarity]);
+      sl.bg.setFillStyle(flashing && !calm ? 0x6a6a3a : selected ? 0x363d57 : 0x252a3a, 1);
+      sl.bg.setStrokeStyle(selected || flashing ? 6 : 4, flashing && (calm || blink > 0.5) ? COLORS.highlight : RARITY_COLOR[card.rarity]);
       sl.label.setPosition(x + CARD_W / 2, Y + H.labelDy - lift)
         .setText(cardLabel(card.stat, s.config.cards.values[card.stat][card.rarity]));
       sl.rarity.setPosition(x + 8, Y + H.rarityDy - lift).setText(RARITY_NAME[card.rarity]).setColor('#' + RARITY_COLOR[card.rarity].toString(16).padStart(6, '0'));

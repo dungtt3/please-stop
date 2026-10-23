@@ -18,6 +18,7 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { sfx } from '../audio/sfx';
 import { Banner, Toast } from '../ui/Toast';
 import { browserStore } from '../settings/configStore';
+import { motion, REDUCED_FX_MAX_MS, ShakeGate } from '../settings/motion';
 import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
 import { recordRun, TIMEOUT_MS } from '../net/cloud';
@@ -35,6 +36,9 @@ import { getVisuals } from '../visuals/loader';
 import { drawRarityPips, drawUnitBody } from '../visuals/views';
 
 const DRAG_THRESHOLD = 8;
+/** Giảm chuyển động: viền đỏ mờ ở mép bàn khi quái lọt. */
+const LEAK_CUE_COLOR = 0xe53935;
+const LEAK_CUE_ALPHA = 0.5;
 
 export type GameStart =
   | { kind: 'new' }
@@ -72,6 +76,8 @@ export class GameScene extends Phaser.Scene {
   private pauseMenu!: PauseMenu;
   private toast!: Toast;
   private banner!: Banner;
+  /** Chống rung màn hình dồn dập (≥ 300 ms giữa hai lần). */
+  private readonly shakeGate = new ShakeGate(() => this.time.now);
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
   /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
@@ -455,7 +461,19 @@ export class GameScene extends Phaser.Scene {
       .text(c.x + Phaser.Math.Between(-8, 8), c.y, txt, textStyle({ size, color, bold: true, stroke: { color: '#000000', width: 3 } }))
       .setOrigin(0.5)
       .setDepth(50);
-    this.tweens.add({ targets: tx, y: c.y - 36, alpha: 0, duration: 800, onComplete: () => tx.destroy() });
+    // Giảm chuyển động: chữ hiện tại chỗ rồi mờ, không bay lên.
+    const calm = motion.reduced;
+    this.tweens.add({ targets: tx, ...(calm ? {} : { y: c.y - 36 }), alpha: 0, duration: calm ? 600 : 800, onComplete: () => tx.destroy() });
+  }
+
+  /** Giảm chuyển động: viền đỏ mờ ở mép bàn thay cho rung, tắt trong ≤ 200 ms. */
+  private leakCue(): void {
+    const m = this.state.map;
+    const tl = this.toScreen({ x: 0, y: 0 });
+    const edge = this.add
+      .rectangle(tl.x, tl.y, m.cols * this.tileSize, m.rows * this.tileSize)
+      .setOrigin(0).setDepth(55).setStrokeStyle(6, LEAK_CUE_COLOR, LEAK_CUE_ALPHA);
+    this.tweens.add({ targets: edge, alpha: 0, duration: REDUCED_FX_MAX_MS, onComplete: () => edge.destroy() });
   }
 
   private handleEvent(e: GameEvent): void {
@@ -504,7 +522,8 @@ ${m}` : `Wave ${e.wave}`);
         this.banner.show(`+${e.reward} vàng`, COLORS.gold);
         break;
       case 'leak':
-        this.cameras.main.shake(150, 0.004);
+        if (motion.reduced) this.leakCue();
+        else if (this.shakeGate.allow()) this.cameras.main.shake(150, 0.002);
         sfx.play('leak');
         break;
       default:
