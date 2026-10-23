@@ -22,12 +22,13 @@ beforeEach(() => {
 });
 
 const BASE = JSON.parse(JSON.stringify(snapshotRun(createGame(1), { runId: 'r1', deviceId: 'dev-A', runSeconds: 5, now: 1000 }))) as RunSave;
-function mk(o: { runId?: string; deviceId?: string; inWave?: boolean; gold?: number } = {}): RunSave {
+function mk(o: { runId?: string; deviceId?: string; inWave?: boolean; gold?: number; savedAt?: number } = {}): RunSave {
   const s = structuredClone(BASE);
   s.runId = o.runId ?? 'r1';
   s.deviceId = o.deviceId ?? 'dev-A';
   s.inWave = o.inWave ?? false;
   if (o.gold !== undefined) s.game.gold = o.gold;
+  if (o.savedAt !== undefined) s.savedAt = o.savedAt;
   return s;
 }
 
@@ -40,6 +41,8 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
     row: null as FakeRow | null,
     offline: false,
     endFails: false,
+    /** Server ghi xong nhưng máy không nhận được trả lời (hết giờ phía client). */
+    lostReply: false,
     hang: opts.hang ?? false,
     gate: null as Promise<void> | null,
     endGate: null as Promise<void> | null,
@@ -75,14 +78,15 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
       if (f.gate) await f.gate;
       if (f.offline) return { ok: false, error: 'network' };
       const data = { save: JSON.parse(JSON.stringify(save)) as unknown, inWave: save.inWave, deviceId: save.deviceId, updatedAt: t };
+      const reply = (r: PutResult): PutResult => (f.lostReply && r.ok ? { ok: false, error: 'network' } : r);
       if (baseRev === 0) {
         if (f.row) return { ok: false, error: 'conflict' };
         f.row = { runId, rev: 1, ...data };
-        return { ok: true, rev: 1 };
+        return reply({ ok: true, rev: 1 });
       }
       if (!f.row || f.row.runId !== runId || f.row.rev !== baseRev) return { ok: false, error: 'conflict' };
       f.row = { runId, rev: f.row.rev + 1, ...data };
-      return { ok: true, rev: f.row.rev };
+      return reply({ ok: true, rev: f.row.rev });
     },
     async end(runId: string, deviceId: string, knownRev: number): Promise<boolean | 'error'> {
       f.endCalls.push(runId);
@@ -300,6 +304,67 @@ describe('tài khoản', () => {
     expect(cloud.baseRevs.length).toBe(calls);
     expect(storeA.getItem(KEY)).toBeNull();
     expect(cloud.row).toMatchObject({ rev: 2, save: { game: { gold: 2 } } });
+  });
+
+  test('tài khoản: put đầu tiên hết giờ nhưng server đã ghi → lần lưu sau nhận rev đó, không xung đột', async () => {
+    const store = device('dev-A');
+    const cloud = fakeCloud();
+    const m = acct(store, cloud);
+    expect(await m.load()).toEqual({ kind: 'none' });
+    cloud.lostReply = true;
+    expect(await m.save(mk({ gold: 1, savedAt: 1 }))).toBe('pending');
+    expect(cloud.row).toMatchObject({ rev: 1 });
+    cloud.lostReply = false;
+    expect(await m.save(mk({ gold: 2, savedAt: 2 }))).toBe('ok');
+    expect(cloud.baseRevs).toEqual([0, 0, 1]);
+    expect(cloud.row).toMatchObject({ rev: 2, save: { game: { gold: 2 } } });
+    expect(readLocal(store, KEY)).toMatchObject({ save: { game: { gold: 2 } }, baseRev: 2, dirty: false });
+  });
+
+  test('tài khoản: put giữa ván hết giờ nhưng server đã ghi → không xung đột, bản mới nhất được gửi', async () => {
+    const store = device('dev-A');
+    const cloud = fakeCloud();
+    const m = acct(store, cloud);
+    expect(await m.save(mk({ gold: 1, savedAt: 1 }))).toBe('ok');
+    cloud.lostReply = true;
+    expect(await m.save(mk({ gold: 2, savedAt: 2 }))).toBe('pending');
+    expect(await m.save(mk({ gold: 3, savedAt: 3 }))).toBe('pending');
+    cloud.lostReply = false;
+    expect(cloud.row).toMatchObject({ rev: 3 });
+    expect(await m.save(mk({ gold: 4, savedAt: 4 }))).toBe('ok');
+    expect(cloud.row).toMatchObject({ rev: 4, save: { game: { gold: 4 } } });
+    expect(readLocal(store, KEY)).toMatchObject({ baseRev: 4, dirty: false });
+  });
+
+  test('tài khoản: put hết giờ rồi máy khác chơi tiếp → vẫn là xung đột thật', async () => {
+    const storeA = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(storeA, cloud);
+    expect(await a.save(mk({ gold: 1, savedAt: 1 }))).toBe('ok');
+    cloud.lostReply = true;
+    expect(await a.save(mk({ gold: 2, savedAt: 2 }))).toBe('pending');
+    cloud.lostReply = false;
+    const b = acct(device('dev-B'), cloud);
+    await b.load();
+    expect(await b.save(mk({ deviceId: 'dev-B', gold: 9, savedAt: 9 }))).toBe('ok');
+    expect(await a.save(mk({ gold: 3, savedAt: 3 }))).toBe('conflict');
+    expect(storeA.getItem(KEY)).toBeNull();
+    expect(cloud.row).toMatchObject({ rev: 3, deviceId: 'dev-B', save: { game: { gold: 9 } } });
+  });
+
+  test('tài khoản: dòng cùng máy nhưng không phải bản put hết giờ (tab khác) → xung đột', async () => {
+    const store = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(store, cloud);
+    expect(await a.save(mk({ gold: 1, savedAt: 1 }))).toBe('ok');
+    cloud.lostReply = true;
+    expect(await a.save(mk({ gold: 2, savedAt: 2 }))).toBe('pending');
+    cloud.lostReply = false;
+    const tab = acct(device('dev-A'), cloud);
+    await tab.load();
+    expect(await tab.save(mk({ gold: 7, savedAt: 7 }))).toBe('ok');
+    expect(await a.save(mk({ gold: 3, savedAt: 3 }))).toBe('conflict');
+    expect(cloud.row).toMatchObject({ rev: 3, save: { game: { gold: 7 } } });
   });
 
   test('tài khoản: inWave của máy khác, mới 2 phút → elsewhere', async () => {

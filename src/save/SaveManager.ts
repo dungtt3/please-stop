@@ -39,6 +39,8 @@ export class SaveManager {
   private waiting: ((r: SaveResult) => void)[] | null = null;
   /** Lệnh put đang gửi (để `end` chờ đúng lệnh này, không chờ các lần lưu xếp hàng sau nó). */
   private inflight: Promise<unknown> | null = null;
+  /** `savedAt` các bản put lỗi mạng của ván này: server có thể đã ghi mà máy không nhận được trả lời (hết giờ). */
+  private uncertain: { runId: string; savedAt: number[] } | null = null;
   /** Các lệnh `end` chưa xong; put đầu tiên của ván mới phải đi sau chúng. */
   private readonly pendingEnds = new Set<Promise<void>>();
 
@@ -234,21 +236,44 @@ export class SaveManager {
   }
 
   private async push(): Promise<SaveResult> {
-    if (this.stopped) return 'conflict';
-    const cur = this.cur;
-    if (!cur?.dirty) return 'ok'; // ván đã end, hoặc đã đẩy rồi
-    const sent = cur.save;
-    const r = await this.cloudPut(sent.runId, cur.baseRev, sent);
-    if (r.ok) {
-      const now = this.cur;
-      // Cùng ván thì nhận rev mới; chỉ hết dirty khi chưa có bản nào mới hơn.
-      if (now && now.save.runId === sent.runId) this.setCur({ save: now.save, baseRev: r.rev, dirty: now.save !== sent });
-      return 'ok';
+    for (let retried = false; ; retried = true) {
+      if (this.stopped) return 'conflict';
+      const cur = this.cur;
+      if (!cur?.dirty) return 'ok'; // ván đã end, hoặc đã đẩy rồi
+      const sent = cur.save;
+      const r = await this.cloudPut(sent.runId, cur.baseRev, sent);
+      if (r.ok) {
+        const now = this.cur;
+        // Cùng ván thì nhận rev mới; chỉ hết dirty khi chưa có bản nào mới hơn.
+        if (now && now.save.runId === sent.runId) this.setCur({ save: now.save, baseRev: r.rev, dirty: now.save !== sent });
+        return 'ok';
+      }
+      if (r.error === 'network') return this.localOk ? 'pending' : 'unsaved';
+      // Xung đột có thể do chính put trước của máy này (hết giờ nhưng server đã ghi): nhận rev đó, gửi lại một lần.
+      if (!retried && (await this.committedAnyway(sent.runId))) continue;
+      this.stopped = true;
+      this.dropCur();
+      return 'conflict';
     }
-    if (r.error === 'network') return this.localOk ? 'pending' : 'unsaved';
-    this.stopped = true;
-    this.dropCur();
-    return 'conflict';
+  }
+
+  /** Dòng cloud là một bản put lỗi mạng của chính máy này → lấy rev của nó làm baseRev. */
+  private async committedAnyway(runId: string): Promise<boolean> {
+    const u = this.uncertain;
+    if (u?.runId !== runId) return false;
+    const row = await this.cloudFetch();
+    if (!row || row === 'error' || row.runId !== runId || row.deviceId !== this.deviceId) return false;
+    const saved = parseRunSave(row.save);
+    if (!saved || !u.savedAt.includes(saved.savedAt)) return false;
+    this.uncertain = null;
+    const now = this.cur;
+    if (now?.save.runId === runId) this.setCur({ save: now.save, baseRev: row.rev, dirty: true });
+    return true;
+  }
+
+  private noteUncertain(save: RunSave): void {
+    if (this.uncertain?.runId !== save.runId) this.uncertain = { runId: save.runId, savedAt: [] };
+    this.uncertain.savedAt.push(save.savedAt);
   }
 
   private setCur(v: LocalSave): void {
@@ -296,8 +321,12 @@ export class SaveManager {
         await Promise.all([...this.pendingEnds]);
         if (readEnded(this.store, this.userId).length) await this.flushEnded();
       }
-      return await this.cloud.put(runId, baseRev, save);
+      const r = await this.cloud.put(runId, baseRev, save);
+      if (r.ok) this.uncertain = null;
+      else if (r.error === 'network') this.noteUncertain(save);
+      return r;
     } catch {
+      this.noteUncertain(save);
       return { ok: false, error: 'network' };
     }
   }
