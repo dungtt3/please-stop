@@ -122,7 +122,9 @@ Một ảnh PNG kèm một file JSON mô tả từng khung (cho phép khung kíc
 - **Tôn trọng `loop`**: `unit.<lớp>.idle`, `minion.idle`, `enemy.<loại>.walk` (nền, mặc định lặp);
   `projectile.*` (đang bay), `skill.mage.meteor` (đang rơi) và `skill.archer.arrow` (đang rơi): lặp trong lúc đang bay/rơi nếu `loop: true`.
 - **Luôn chạy đúng một lần** (bỏ qua `loop`): `unit.<lớp>.attack`, `unit.<lớp>.skill`, `minion.attack`, `enemy.<loại>.die`,
-  `impact.*` và `skill.<lớp>` (bốn khóa `skill.swordsman|archer|mage|summoner`). Hiệu ứng biến mất khi hoạt ảnh kết thúc.
+  `impact.*` và `skill.<lớp>` (bốn khóa `skill.swordsman|archer|mage|summoner`). Hiệu ứng biến mất khi hoạt ảnh kết thúc,
+  nhưng `impact.*` và `skill.<lớp>` bị cắt ở tối đa **0,6 giây** (riêng vụ nổ `skill.mage` là **0,3 giây**) — làm hoạt ảnh
+  ngắn hơn mốc này (vd 6 khung ở 12 fps = 0,5 giây), nếu dài hơn phần sau sẽ không hiện.
 
 ### Kích thước hiển thị của `skill.*` và `impact.*`
 
