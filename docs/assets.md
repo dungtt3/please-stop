@@ -111,11 +111,31 @@ Một ảnh PNG kèm một file JSON mô tả từng khung (cho phép khung kíc
 | Trường | Mặc định | Ý nghĩa |
 | --- | --- | --- |
 | `fps` | `10` | Số khung hình mỗi giây, số > 0 |
-| `loop` | `true` cho `idle`/`walk`, `false` cho mọi khóa còn lại | `true` lặp mãi; `false` chạy một lần rồi dừng/biến mất |
+| `loop` | `true` cho `idle`/`walk`, `false` cho mọi khóa còn lại | Chỉ có tác dụng với các khóa ở mục "Khóa nào lặp, khóa nào luôn chạy một lần" bên dưới; các khóa khác luôn chạy một lần dù ghi `loop: true` |
 | `scale` | `1` | Hệ số phóng/thu, số > 0 (vd `0.5` thu nhỏ một nửa) |
 | `originX`, `originY` | `0.5`, `0.5` | Gốc tọa độ (xem dưới) |
 | `tint` | không | Nhuộm màu, số nguyên như `16711680` (JSON không có dạng `0xff0000`; đổi sang thập phân) |
 | `rotateToTarget` | `false` | Xoay sprite theo hướng bay (xem dưới) |
+
+### Khóa nào lặp, khóa nào luôn chạy một lần
+
+- **Tôn trọng `loop`**: `unit.<lớp>.idle`, `minion.idle`, `enemy.<loại>.walk` (nền, mặc định lặp);
+  `projectile.*` (đang bay), `skill.mage.meteor` (đang rơi) và `skill.archer.arrow` (đang rơi): lặp trong lúc đang bay/rơi nếu `loop: true`.
+- **Luôn chạy đúng một lần** (bỏ qua `loop`): `unit.<lớp>.attack`, `unit.<lớp>.skill`, `minion.attack`, `enemy.<loại>.die`,
+  `impact.*` và `skill.<lớp>` (bốn khóa `skill.swordsman|archer|mage|summoner`). Hiệu ứng biến mất khi hoạt ảnh kết thúc.
+
+### Kích thước hiển thị của `skill.*` và `impact.*`
+
+Các sprite `skill.<lớp>` và `impact.*` được vẽ ở **tỉ lệ ô** (scale `1` = một ô 64 px, nhân với `scale` của mục), **không** tự co giãn theo
+phạm vi hay bán kính thật của skill. Hãy vẽ sẵn đúng cỡ, hoặc chỉnh bằng `scale`. Bán kính mặc định (đơn vị ô, từ `src/config/characters.ts`):
+
+| Khóa | Vùng tác dụng mặc định | Cỡ ảnh gợi ý (scale 1) |
+| --- | --- | --- |
+| `skill.mage` | `meteorRadius` = 1.5 ô (đường kính 3 ô) | khoảng 192 px |
+| `impact.mage` | `splashRadius` = 0.75 ô (đường kính 1.5 ô) | khoảng 96 px |
+| `skill.swordsman` | bán kính = tầm đánh của kiếm sĩ, mặc định 1.5 ô (đường kính 3 ô) | khoảng 192 px |
+
+Nếu ảnh nhỏ hơn vùng tác dụng thì hiệu ứng trông nhỏ hơn vùng thật; dùng `scale` để phóng to (vd ảnh 128 px muốn phủ 192 px thì `scale: 1.5`).
 
 Trường sai kiểu hoặc sai giá trị (ví dụ `fps: 0`, `frameWidth: "64"`, thiếu `file`) làm **cả mục đó bị bỏ qua**,
 game rơi về hình khối cho khóa này và ghi một cảnh báo ở console.
@@ -175,7 +195,7 @@ Với `projectile.*`, đặt `"rotateToTarget": true` thì sprite tự xoay theo
 - Khóa không có trong manifest: dùng hình khối mặc định, không báo gì.
 - Mục trong manifest sai định dạng: mục đó bị bỏ qua, game dùng hình khối, **console ghi cảnh báo** nêu khóa và lỗi.
 - File PNG/JSON không tải được (sai tên, sai đường dẫn): game dùng hình khối cho khóa đó và ghi cảnh báo ở console.
-- Tải quá lâu (có giới hạn thời gian): game vào ván với hình khối.
+- Tải quá lâu (manifest.json tối đa 2 giây, toàn bộ asset tối đa 8 giây): game vào ván với hình khối.
 
 Vì vậy một lỗi nhỏ không làm game hỏng; hãy xem console (F12) để biết cần sửa gì.
 

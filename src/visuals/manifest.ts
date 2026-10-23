@@ -75,7 +75,7 @@ const parseEntry = (key: string, v: unknown): ManifestEntry | string => {
   if (v.scale !== undefined && !isPosNum(v.scale)) return '`scale` phải là số > 0';
   if (v.originX !== undefined && !isNum(v.originX)) return '`originX` phải là số';
   if (v.originY !== undefined && !isNum(v.originY)) return '`originY` phải là số';
-  if (v.tint !== undefined && !(isNum(v.tint) && Number.isInteger(v.tint) && v.tint >= 0)) return '`tint` phải là số nguyên >= 0 (vd 0xff0000)';
+  if (v.tint !== undefined && !(isNum(v.tint) && Number.isInteger(v.tint) && v.tint >= 0)) return '`tint` phải là số nguyên >= 0 (vd 16711680)';
   if (v.rotateToTarget !== undefined && typeof v.rotateToTarget !== 'boolean') return '`rotateToTarget` phải là true/false';
 
   const common: Common = { fps, loop };
