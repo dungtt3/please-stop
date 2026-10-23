@@ -16,7 +16,7 @@ export type CloudClear = { ok: true } | { ok: false; error: 'code' | 'network' |
 class TimeoutError extends Error {}
 
 /** Chạy `fn` với giới hạn thời gian; hết giờ thì hủy request và ném TimeoutError. */
-async function withTimeout<T>(fn: (signal: AbortSignal) => PromiseLike<T>): Promise<T> {
+export async function withTimeout<T>(fn: (signal: AbortSignal) => PromiseLike<T>): Promise<T> {
   const ac = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, rej) => {
