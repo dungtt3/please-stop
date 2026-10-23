@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene';
+import { StartScene } from './scenes/StartScene';
 import { refreshCloudCache } from './net/cloudCache';
 
 async function boot(): Promise<void> {
@@ -15,7 +16,7 @@ async function boot(): Promise<void> {
     parent: 'game',
     backgroundColor: '#12141c',
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    scene: [GameScene],
+    scene: [StartScene, GameScene],
   });
 }
 
