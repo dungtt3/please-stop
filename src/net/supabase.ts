@@ -1,5 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+/** Khóa localStorage của phiên đăng nhập (riêng cho game, không đụng app khác). */
+export const AUTH_STORAGE_KEY = 'ps.auth';
+
 let client: SupabaseClient | null | undefined;
 
 /** Client Supabase tạo lười từ biến môi trường; null nếu thiếu cấu hình. */
@@ -13,7 +16,7 @@ export function getSupabase(): SupabaseClient | null {
     client =
       url && key
         ? createClient(url, key, {
-            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce', storageKey: 'ps.auth' },
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce', storageKey: AUTH_STORAGE_KEY },
           })
         : null;
   } catch {
