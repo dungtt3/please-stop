@@ -7,6 +7,8 @@ export const BOTTOM_H = 176;
 export const MAX_TILE = 64;
 /** Lề trái của bản đồ; phần còn lại bên phải dành cho bảng chi tiết nhân vật. */
 export const MAP_LEFT = 16;
+/** Chiều cao nút chữ nhật dùng chung. */
+export const BTN_H = 56;
 
 export const FONT = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
 

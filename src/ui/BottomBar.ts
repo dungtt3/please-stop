@@ -5,9 +5,9 @@ import { startWave } from '../sim/game';
 import { startQuiz } from '../sim/quiz';
 import { drawCost, luckCost, summonCost } from '../sim/units';
 import type { CommandResult, GameState } from '../sim/types';
-import { COLORS, GAME_H, GAME_W, textStyle } from './theme';
+import { BTN_H, COLORS, GAME_H, GAME_W, textStyle } from './theme';
 
-export const BTN_H = 56;
+export { BTN_H };
 
 export interface ButtonOpts {
   depth?: number;

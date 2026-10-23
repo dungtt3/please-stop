@@ -3,15 +3,18 @@ import { sellUnit } from '../sim/commands';
 import { modifierOf } from '../sim/enemies';
 import { activeCooldown } from '../sim/skills';
 import { computeStats } from '../sim/units';
-import type { GameConfig } from '../config';
-import type { CardStat, ClassId, CommandResult, GameState, Unit } from '../sim/types';
+import type { CommandResult, GameState, Unit } from '../sim/types';
 import { Button, BTN_H } from './BottomBar';
-import { CARD_STAT_NAME, COLORS, fmtCardValue, GAME_W, MAP_LEFT, RARITY_COLOR, RARITY_NAME, TOP_BAR_H, textStyle } from './theme';
+import { COLORS, GAME_W, RARITY_COLOR, textStyle } from './theme';
+import {
+  PANEL_BAR_GAP, PANEL_BAR_H, PANEL_BODY_TOP, PANEL_CD_GAP, PANEL_CD_LABEL_H, PANEL_FONT, PANEL_LINE_SPACING, PANEL_PAD, PANEL_W,
+  PANEL_Y, unitPanelText,
+} from './unitPanelText';
 
-const W = 400;
+const W = PANEL_W;
 const X = GAME_W - W - 8;
-const Y = TOP_BAR_H + 8;
-const PAD = 8;
+const Y = PANEL_Y;
+const PAD = PANEL_PAD;
 
 /** Bảng chi tiết ở lề phải bản đồ (bản đồ dịch sang trái ở MAP_LEFT nên không che ô nào). */
 export class UnitPanel {
@@ -30,11 +33,11 @@ export class UnitPanel {
     this.bg = scene.add.rectangle(X, Y, W, 100, COLORS.bar, 0.96).setOrigin(0).setDepth(120).setStrokeStyle(3, 0x5b6585);
     this.title = scene.add.text(X + PAD, Y + PAD, '', textStyle({ size: 22, bold: true, color: COLORS.text })).setDepth(121);
     this.body = scene.add
-      .text(X + PAD, Y + 40, '', textStyle({ size: 18, color: COLORS.text, wrap: W - 2 * PAD, extra: { lineSpacing: 2 } }))
+      .text(X + PAD, Y + PANEL_BODY_TOP, '', textStyle({ size: PANEL_FONT, color: COLORS.text, wrap: W - 2 * PAD, extra: { lineSpacing: PANEL_LINE_SPACING } }))
       .setDepth(121);
     this.cdLabel = scene.add.text(X + PAD, 0, '', textStyle({ size: 18, color: COLORS.muted })).setDepth(121);
-    this.cdBack = scene.add.rectangle(X + PAD, 0, W - 2 * PAD, 10, 0x000000, 0.6).setOrigin(0).setDepth(121);
-    this.cdFill = scene.add.rectangle(X + PAD, 0, 0, 10, 0x42a5f5).setOrigin(0).setDepth(122);
+    this.cdBack = scene.add.rectangle(X + PAD, 0, W - 2 * PAD, PANEL_BAR_H, 0x000000, 0.6).setOrigin(0).setDepth(121);
+    this.cdFill = scene.add.rectangle(X + PAD, 0, 0, PANEL_BAR_H, 0x42a5f5).setOrigin(0).setDepth(122);
     this.sellBtn = new Button(scene, X + PAD, 0, W - 2 * PAD, BTN_H, '', () => {
       const s = this.getState();
       const sel = this.selectedUnit(s);
@@ -69,50 +72,23 @@ export class UnitPanel {
     }
     if (!this.visible) this.setVisible(true);
     const cfg = s.config;
-    const def = cfg.classes[u.classId];
     const st = computeStats(cfg, u, modifierOf(s).rangeMult);
-    this.title.setText(`${def.name} ★${u.level}`).setColor('#' + RARITY_COLOR[u.rarity].toString(16).padStart(6, '0'));
-    const cards = (Object.keys(u.cards) as CardStat[])
-      .filter((k) => u.cards[k] > 0)
-      .map((k) => `${fmtCardValue(k, u.cards[k])} ${CARD_STAT_NAME[k]}`);
-    const lines = [
-      `Độ hiếm: ${RARITY_NAME[u.rarity]}`,
-      `Sát thương: ${st.damage.toFixed(1)}`,
-      `Tốc đánh: ${st.attackSpeed.toFixed(2)}/s`,
-      `Tầm đánh: ${st.range.toFixed(1)} ô`,
-      `Chí mạng: ${Math.round(st.critChance * 100)}%`,
-      `Ngẫu nhiên: +${Math.round(u.bonus.damage * 100)}% ST, +${Math.round(u.bonus.attackSpeed * 100)}% TĐ`,
-      `Thẻ: ${cards.length ? cards.join(', ') : 'chưa có'}`,
-      `Nội tại: ${def.passive}`,
-      `Kỹ năng: ${def.active}`,
-      skillNumbers(cfg, u.classId),
-    ];
-    this.body.setText(lines.join('\n'));
+    const text = unitPanelText(cfg, u, st);
+    this.title.setText(text.title).setColor('#' + RARITY_COLOR[u.rarity].toString(16).padStart(6, '0'));
+    this.body.setText(text.body);
     const cd = activeCooldown(cfg, u.classId, u.level);
     const frac = cd > 0 ? Math.max(0, Math.min(1, 1 - u.skillCooldown / cd)) : 1;
-    let y = this.body.y + this.body.height + 6;
+    let y = this.body.y + this.body.height + PANEL_CD_GAP;
     this.cdLabel.setPosition(X + PAD, y).setText(u.skillCooldown > 0 ? `Hồi chiêu: ${u.skillCooldown.toFixed(1)}s` : 'Kỹ năng sẵn sàng');
-    y += 24;
+    y += PANEL_CD_LABEL_H;
     this.cdBack.setPosition(X + PAD, y);
-    this.cdFill.setPosition(X + PAD, y).setSize((W - 2 * PAD) * frac, 10);
-    y += 16;
+    this.cdFill.setPosition(X + PAD, y).setSize((W - 2 * PAD) * frac, PANEL_BAR_H);
+    y += PANEL_BAR_H + PANEL_BAR_GAP;
     this.sellBtn.bg.setPosition(X + PAD, y);
     this.sellBtn.label.setPosition(X + W / 2, y + BTN_H / 2);
     this.sellBtn.setText(`Bán (+${Math.floor(u.goldInvested / 2)} vàng)`);
     this.height = y + BTN_H + PAD - Y;
     this.bg.setSize(W, this.height);
     this.sellBtn.setDim(s.phase === 'won' || s.phase === 'lost');
-  }
-}
-
-/** Số liệu kỹ năng lấy trực tiếp từ config (không ghi cứng trong mô tả). */
-function skillNumbers(cfg: GameConfig, id: ClassId): string {
-  const k = cfg.skills;
-  const pct = (m: number) => `${Math.round(m * 100)}%`;
-  switch (id) {
-    case 'swordsman': return `(Đòn thứ ${k.swordsman.comboEvery} ×${k.swordsman.comboMult}; chém xoáy ${pct(k.swordsman.whirlMult)} ST)`;
-    case 'archer': return `(${k.archer.rainArrows} mũi, mỗi mũi ${pct(k.archer.rainMult)} ST)`;
-    case 'mage': return `(Thiên thạch ${pct(k.mage.meteorMult)} ST; cháy ${k.mage.burnDuration}s)`;
-    default: return `(Cứ ${k.summoner.passiveEvery}s gọi 1 lính; kỹ năng gọi ${k.summoner.waveCount} lính)`;
   }
 }

@@ -169,7 +169,7 @@ export class ResultScreen {
       return;
     }
     const line = (r: ScoreRow, i: number): string =>
-      `${String(i + 1).padStart(2)}. ${r.name.padEnd(MAX_NAME)} W${String(r.wave_reached).padStart(2)} ${formatNum(r.kills).padStart(7)}${r.won ? ' ✓' : ''}`;
+      `${String(i + 1).padStart(2)}. ${r.name.padEnd(MAX_NAME)} W${String(r.wave_reached).padStart(2)} ${formatNum(r.kills).padStart(9)}${r.won ? ' ✓' : ''}`;
     const lines = rows.map((r, i) => line({ ...r, name: sanitizeName(String(r.name)) }, i));
     this.cols[0].setText(lines.slice(0, COL_ROWS).join('\n'));
     this.cols[1].setText(lines.slice(COL_ROWS, COL_ROWS * 2).join('\n'));
