@@ -4,8 +4,8 @@ Game dùng Supabase Auth để đăng nhập Google. Dự án Supabase này **d�
 (`Create-animation`), nên các bước dưới đây là thay đổi cài đặt cấp dự án và phải làm thận trọng.
 Không có bước nào được tự động hóa bằng code hay Supabase CLI.
 
-Code chạy được trước khi làm xong các bước này: nút đăng nhập chỉ báo lỗi, người chơi khách vẫn chơi
-bình thường.
+Code chạy được trước khi làm xong các bước này: bấm nút đăng nhập chỉ dẫn tới trang lỗi của Supabase,
+người chơi khách vẫn chơi bình thường.
 
 ## Bước 1. Google Cloud Console: tạo OAuth client
 
@@ -50,8 +50,10 @@ Supabase → Authentication → URL Configuration. Chỉ **thêm** vào *Redirec
 quay về đúng chính nó.
 
 1. Chạy `npm run dev`, mở `http://localhost:5173`, bấm **Đăng nhập bằng Google**.
-2. Nếu chưa bật provider (bước 2), Supabase trả lỗi (vd `provider is not enabled`) và nút báo lỗi;
-   game vẫn chơi được như khách.
+2. Nếu chưa bật provider (bước 2), nút **không** báo lỗi trong game (với PKCE, `signInWithOAuth` không
+   gọi mạng, chỉ chuyển trang): trình duyệt chuyển sang trang lỗi JSON của Supabase (vd
+   `Unsupported provider: provider is not enabled`). Bấm Back để quay lại game; game vẫn chơi được như
+   khách.
 3. Nếu đã bật: trình duyệt chuyển sang Google, chọn tài khoản, rồi quay về game với tên tài khoản
    hiện trên màn bắt đầu. Thử thêm trên một trình duyệt khác để kiểm tra chơi tiếp qua lại giữa hai
    thiết bị.

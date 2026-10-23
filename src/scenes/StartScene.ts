@@ -25,6 +25,8 @@ export class StartScene extends Phaser.Scene {
   private gen = 0;
   /** Đang tải hoặc đang chạy một hành động async: mọi nút không làm gì. */
   private busy = true;
+  /** Số đối tượng trong scene lúc `draw` bắt đầu (để bỏ phần đã vẽ nếu `draw` ném giữa chừng). */
+  private drawMark: number | null = null;
   private toast!: Toast;
 
   constructor() {
@@ -35,8 +37,16 @@ export class StartScene extends Phaser.Scene {
     // Scene được vào lại nhiều lần (Màn hình chính, xung đột, đăng xuất): xóa hết trạng thái của lần trước.
     this.gen++;
     this.busy = true;
+    this.drawMark = null;
+    // Trang được khôi phục từ bfcache (vd bấm Back ở trang đăng nhập): scene có thể đang giữ `busy`
+    // sau khi bắt đầu đăng nhập → vào lại từ đầu.
+    const onPageShow = (e: PageTransitionEvent): void => {
+      if (e.persisted) this.scene.restart();
+    };
+    window.addEventListener('pageshow', onPageShow);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.gen++;
+      window.removeEventListener('pageshow', onPageShow);
     });
     this.add
       .text(GAME_W / 2, 130, 'Merge Defense', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: '#ffffff' })
@@ -46,14 +56,25 @@ export class StartScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.toast = new Toast(this);
     const g = this.gen;
-    void this.boot(loading).catch((e) => {
-      // Không để lỗi bất ngờ khóa người chơi ngoài ván: về chế độ khách với nút Chơi.
-      console.error('StartScene: không tải được màn hình bắt đầu', e);
-      if (g !== this.gen) return;
-      loading.destroy();
-      this.draw(new SaveManager({ store: browserStore(), cloud: null, userId: null }), null, { kind: 'none' }, false);
-      this.busy = false;
-    });
+    void this.boot(loading)
+      .catch(async (e) => {
+        // Không để lỗi bất ngờ khóa người chơi ngoài ván: về chế độ khách, vẫn đọc ván khách trên máy.
+        console.error('StartScene: không tải được màn hình bắt đầu', e);
+        if (g !== this.gen) return;
+        const fallback = new SaveManager({ store: browserStore(), cloud: null, userId: null });
+        const info = await fallback.load().catch((): StartInfo => ({ kind: 'none' }));
+        if (g !== this.gen) return;
+        if (info.kind === 'lost') {
+          this.enter(fallback, null, { kind: 'lost', save: info.save, record: info.record });
+          return;
+        }
+        loading.destroy();
+        // `draw` có thể đã ném giữa chừng: bỏ phần nó đã vẽ để không vẽ chồng hai lần.
+        if (this.drawMark !== null) for (const o of this.children.list.slice(this.drawMark)) o.destroy();
+        this.draw(fallback, null, info, info.kind === 'invalid');
+        this.busy = false;
+      })
+      .catch((e) => console.error('StartScene: không vẽ được màn hình dự phòng', e));
   }
 
   private async boot(loading: Phaser.GameObjects.Text): Promise<void> {
@@ -135,6 +156,7 @@ export class StartScene extends Phaser.Scene {
   }
 
   private draw(manager: SaveManager, account: Account | null, info: StartInfo, unreadable: boolean): void {
+    this.drawMark = this.children.list.length;
     const cx = GAME_W / 2;
     const g = this.gen;
     const stale = (): boolean => g !== this.gen;
