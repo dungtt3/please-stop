@@ -151,7 +151,7 @@ Người dùng sẽ gửi sau các hiệu ứng và hoạt ảnh nhân vật; đ
   - đạn: `projectile.<lớp>`, `projectile.minion`; trúng đích: `impact.<lớp>`;
   - skill: `skill.<lớp>` (và `skill.mage.meteor`, `skill.archer.arrow` cho phần rơi xuống);
   - chí mạng: `impact.crit`.
-- **Bản khai báo asset** (`public/assets/manifest.json`): mỗi khóa trỏ tới một file và
+- **Bản khai báo asset** (`public/sprites/manifest.json`): mỗi khóa trỏ tới một file và
   cách cắt khung. Hỗ trợ hai dạng phổ biến *(người thiết kế quyết định)*:
   - spritesheet PNG lưới đều: `{ "type": "sheet", "file": "...png", "frameWidth", "frameHeight", "frames"?, "fps", "loop" }`;
   - texture atlas JSON kiểu Phaser/TexturePacker/Aseprite (JSON hash):
