@@ -205,6 +205,8 @@ export class GameScene extends Phaser.Scene {
 
   private onSaveConflict(): void {
     this.halted = true;
+    // Popup (depth 450) che biển thông báo (350): đóng trước để người chơi đọc được. halted đã giữ ván đứng yên.
+    this.pauseMenu?.close();
     this.banner.show('Ván này đã được chơi ở thiết bị khác');
     this.conflictTimer = this.time.delayedCall(2000, () => this.scene.start('Start'));
   }
