@@ -186,3 +186,40 @@ test('stop: không lưu thêm và không end', () => {
   expect(saves).toHaveLength(1);
   expect(ends).toEqual([]);
 });
+
+test('live (dùng cho runActive/bỏ ván): đúng khi đang chơi, sai sau end/xung đột/stop/ván thua từ StartInfo', async () => {
+  const a = setup();
+  expect(a.saver.live).toBe(false); // chưa bắt đầu ván nào
+  a.saver.beginNew(a.state);
+  expect(a.saver.live).toBe(true);
+  a.saver.end();
+  expect(a.saver.live).toBe(false);
+
+  const b = setup('conflict');
+  b.saver.beginNew(b.state);
+  expect(b.saver.live).toBe(true); // kết quả xung đột chưa về
+  await flush();
+  expect(b.saver.live).toBe(false); // menu cấu hình không được tính thua / ghi ván này nữa
+  b.saver.end();
+  expect(b.ends).toEqual([]);
+
+  const c = setup();
+  c.saver.beginNew(c.state);
+  c.saver.stop();
+  expect(c.saver.live).toBe(false);
+
+  const d = setup();
+  d.saver.markLost({ ...a.saves[0], runId: 'old' });
+  expect(d.saver.live).toBe(false);
+});
+
+test('xung đột đến khi menu đang mở (flushPrep): ván ngừng live ngay khi kết quả về', async () => {
+  const { saver, state, hooks } = setup('conflict');
+  saver.beginNew(state);
+  await flush();
+  expect(hooks.conflicts).toBe(1);
+  saver.flushPrep(state); // tab ẩn khi menu mở: không lưu thêm, không báo thêm
+  await flush();
+  expect(hooks.conflicts).toBe(1);
+  expect(saver.live).toBe(false);
+});

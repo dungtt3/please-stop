@@ -128,6 +128,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 let styleInjected = false;
 let openMenu: HTMLElement | null = null;
+let closeActive: (() => void) | null = null;
+
+/** Đóng menu đang mở (nếu có) như bấm Đóng: gọi `onClose`. */
+export function closeConfigMenu(): void {
+  closeActive?.();
+}
 
 export function openConfigMenu(opts: ConfigMenuOptions): void {
   if (openMenu) return;
@@ -438,6 +444,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     document.removeEventListener('keydown', onKey, true);
     overlay.remove();
     openMenu = null;
+    closeActive = null;
     opts.onClose();
   };
   function onKey(e: KeyboardEvent): void {
@@ -472,6 +479,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     document.removeEventListener('keydown', onKey, true);
     overlay.remove();
     openMenu = null;
+    closeActive = null;
     opts.onApplyAndRestart(cfg);
     opts.onClose();
   });
@@ -623,4 +631,5 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   setStatus('Ô có chấm cam là khác mặc định; ↺ để trả về mặc định.');
   document.body.appendChild(overlay);
   openMenu = overlay;
+  closeActive = close;
 }

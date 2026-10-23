@@ -16,7 +16,7 @@ import { UnitPanel } from '../ui/UnitPanel';
 import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
 import { Banner, Toast } from '../ui/Toast';
-import { openConfigMenu } from '../ui/ConfigMenu';
+import { closeConfigMenu, openConfigMenu } from '../ui/ConfigMenu';
 import { browserStore, loadSavedConfig, resetConfig, saveConfig } from '../settings/configStore';
 import { resolveConfig, type ConfigSource } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
@@ -65,6 +65,7 @@ export class GameScene extends Phaser.Scene {
   private accountName: string | null = null;
   /** Đã xung đột với máy khác: đóng băng ván cho tới khi về màn hình chính. */
   private halted = false;
+  private conflictTimer: Phaser.Time.TimerEvent | null = null;
   private drag: { slot: number; startX: number; startY: number; x: number; y: number; moving: boolean } | null = null;
 
   constructor() {
@@ -142,6 +143,9 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener('visibilitychange', onVisibility);
       this.saver.stop();
+      this.conflictTimer?.remove(false);
+      this.conflictTimer = null;
+      closeConfigMenu();
     });
 
     if (start.kind === 'new') this.saver.beginNew(this.state);
@@ -151,12 +155,9 @@ export class GameScene extends Phaser.Scene {
 
   private onSaveConflict(): void {
     this.halted = true;
+    closeConfigMenu();
     this.banner.show('Ván này đã được chơi ở thiết bị khác');
-    this.time.delayedCall(2000, () => this.scene.start('Start'));
-  }
-
-  private get runLive(): boolean {
-    return this.state.phase !== 'won' && this.state.phase !== 'lost';
+    this.conflictTimer = this.time.delayedCall(2000, () => this.scene.start('Start'));
   }
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
@@ -166,6 +167,8 @@ export class GameScene extends Phaser.Scene {
     if (cfg) this.source = 'local';
     this.runRecorded = false;
     this.halted = false;
+    this.conflictTimer?.remove(false);
+    this.conflictTimer = null;
     this.saver.beginNew(this.state);
     // Tải nền để ván sau nhận cấu hình cloud mới nhất, không chặn ván này.
     void refreshCloudCache().catch(() => undefined);
@@ -196,7 +199,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
   private openMenu(): void {
-    if (this.menuOpen) return;
+    if (this.menuOpen || this.halted) return;
     this.menuOpen = true;
     this.drag = null;
     openConfigMenu({
@@ -216,10 +219,10 @@ export class GameScene extends Phaser.Scene {
         return r;
       },
       onSave: (cfg) => (this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true),
-      runActive: () => this.runLive,
+      runActive: () => this.saver.live,
       onApplyAndRestart: (cfg) => {
         // Bỏ ván đang chơi dở: tính thua, xóa bản lưu rồi mới tạo ván mới.
-        if (this.runLive) {
+        if (this.saver.live) {
           const s = this.state;
           this.runRecorded = true;
           void recordRun({ waveReached: s.wave, won: false, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
