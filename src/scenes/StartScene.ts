@@ -8,6 +8,7 @@ import { runStatsOf, type RunSave } from '../sim/save';
 import { Button } from '../ui/BottomBar';
 import { Toast } from '../ui/Toast';
 import { COLORS, FONT, GAME_H, GAME_W } from '../ui/theme';
+import { loadVisuals } from '../visuals/loader';
 import type { GameSceneData, GameStart } from './GameScene';
 
 const MAIN_FILL = 0x2e7d32;
@@ -55,6 +56,9 @@ export class StartScene extends Phaser.Scene {
       .text(GAME_W / 2, 340, 'Đang tải…', { fontFamily: FONT, fontSize: '28px', color: COLORS.muted })
       .setOrigin(0.5);
     this.toast = new Toast(this);
+    // Asset sprite tải một lần cho cả trang, song song với phần tải bên dưới; không bao giờ ném lỗi,
+    // xong trong ASSET_LOAD_TIMEOUT_MS. Lần vào lại scene dùng kết quả đã cache.
+    void loadVisuals(this);
     const g = this.gen;
     void this.boot(loading)
       .catch(async (e) => {
@@ -63,6 +67,7 @@ export class StartScene extends Phaser.Scene {
         if (g !== this.gen) return;
         const fallback = new SaveManager({ store: browserStore(), cloud: null, userId: null });
         const info = await fallback.load().catch((): StartInfo => ({ kind: 'none' }));
+        await loadVisuals(this);
         if (g !== this.gen) return;
         if (info.kind === 'lost') {
           this.enter(fallback, null, { kind: 'lost', save: info.save, record: info.record });
@@ -144,6 +149,10 @@ export class StartScene extends Phaser.Scene {
         }
       }
     }
+
+    // Chờ asset (có giới hạn thời gian) trước khi cho vào ván.
+    await loadVisuals(this);
+    if (dead()) return;
 
     if (info.kind === 'lost') {
       this.enter(manager, account, { kind: 'lost', save: info.save, record: info.record });

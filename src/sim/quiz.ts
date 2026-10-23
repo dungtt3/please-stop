@@ -71,6 +71,7 @@ export function answerQuiz(state: GameState, optionIndex: number): CommandResult
   } else {
     quiz.result = 'wrong';
   }
+  state.events.push({ type: 'quiz', result: quiz.result });
   return { ok: true };
 }
 
@@ -78,7 +79,10 @@ export function updateQuiz(state: GameState, dt: number): void {
   const quiz = state.quiz;
   if (!quiz || quiz.result !== null) return;
   quiz.elapsed += dt;
-  if (quiz.elapsed >= state.config.quiz.timeLimit) quiz.result = 'timeout';
+  if (quiz.elapsed >= state.config.quiz.timeLimit) {
+    quiz.result = 'timeout';
+    state.events.push({ type: 'quiz', result: 'timeout' });
+  }
 }
 
 export function closeQuiz(state: GameState): void {

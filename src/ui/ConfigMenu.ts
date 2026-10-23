@@ -1,40 +1,28 @@
 import { DEFAULT_CONFIG, type GameConfig } from '../config';
 import { enumOptions, exportConfig, importConfig, isFixedArray, mergeConfig, stripIndices } from '../settings/configStore';
 import { labelFor } from '../settings/labels';
-import type { ConfigSource } from '../settings/resolveConfig';
 import type { CloudClear, CloudWrite } from '../net/cloud';
 
 export interface ConfigMenuOptions {
   current: GameConfig;
-  /** Trả false nếu không lưu được. */
-  onSave(cfg: GameConfig): boolean | void;
-  onApplyAndRestart(cfg: GameConfig): void;
-  /** Ván đang chơi dở (chưa thắng/thua): áp dụng & chơi lại sẽ tính ván này là thua, nên hỏi xác nhận. */
-  runActive(): boolean;
-  /** Xóa bản lưu; trả false nếu không xóa được. */
-  onReset?(): boolean | void;
-  onClose(): void;
-  /** Nguồn cấu hình đang dùng cho ván hiện tại. */
-  source?: ConfigSource;
+  /** Cấu hình đang lưu trên cloud; null nếu cloud chưa có. */
+  cloudConfig: GameConfig | null;
   /** ISO time cập nhật cấu hình cloud (nếu có). */
-  cloudUpdatedAt?: string | null;
-  /** Cấu hình dùng khi bỏ bản riêng của trình duyệt (cloud nếu có, không thì mặc định). */
-  fallback?(): GameConfig;
-  /** Trình duyệt này có bản cấu hình riêng đang lưu không. */
-  hasOverride?(): boolean;
-  onCloudSave?(code: string, cfg: GameConfig): Promise<CloudWrite>;
-  onCloudClear?(code: string): Promise<CloudClear>;
+  cloudUpdatedAt: string | null;
+  /** Ghi chú hiện đầu hộp cloud (vd. cloud chưa có cấu hình, hoặc trường lỗi). */
+  note: string | null;
+  onCloudSave(cfg: GameConfig): Promise<CloudWrite>;
+  onCloudClear(): Promise<CloudClear>;
+  /** Có thì menu là một lớp phủ đóng được; không có thì menu chiếm cả trang (trang /admin). */
+  onClose?(): void;
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
-function sourceLine(source: ConfigSource | undefined, updatedAt: string | null | undefined): string {
-  if (source === 'local') return 'Đang dùng: cấu hình trong trình duyệt này';
-  if (source === 'cloud') {
-    const d = updatedAt ? new Date(updatedAt) : null;
-    const t = d && !Number.isNaN(d.getTime()) ? ` (cập nhật ${pad2(d.getHours())}:${pad2(d.getMinutes())} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)})` : '';
-    return `Đang dùng: cấu hình cloud${t}`;
-  }
-  return 'Đang dùng: mặc định';
+function sourceLine(updatedAt: string | null): string {
+  if (!updatedAt) return 'Cấu hình cloud: chưa có';
+  const d = new Date(updatedAt);
+  const t = !Number.isNaN(d.getTime()) ? ` (cập nhật ${pad2(d.getHours())}:${pad2(d.getMinutes())} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)})` : '';
+  return `Cấu hình cloud${t}`;
 }
 
 type Obj = Record<string, unknown>;
@@ -53,8 +41,7 @@ const SECTIONS: { title: string; keys: string[] }[] = [
   { title: 'Map', keys: ['map'] },
 ];
 
-const RESET_LABEL = 'Bỏ cấu hình riêng của trình duyệt này';
-const APPLY_WARNING = 'Ván đang chơi sẽ bị tính thua. Bấm lần nữa để áp dụng.';
+const RESET_LABEL = 'Về cấu hình cloud';
 
 const CSS = `
 .cfgm-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,16,.82);display:flex;justify-content:center;align-items:stretch;font:15px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;color:#e8ebf5}
@@ -128,12 +115,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 let styleInjected = false;
 let openMenu: HTMLElement | null = null;
-let closeActive: (() => void) | null = null;
-
-/** Đóng menu đang mở (nếu có) như bấm Đóng: gọi `onClose`. */
-export function closeConfigMenu(): void {
-  closeActive?.();
-}
 
 export function openConfigMenu(opts: ConfigMenuOptions): void {
   if (openMenu) return;
@@ -145,6 +126,8 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   }
 
   let draft: GameConfig = structuredClone(opts.current);
+  /** Bản đang lưu trên cloud (cập nhật sau khi Lưu/Gỡ thành công). */
+  let cloudCfg: GameConfig | null = opts.cloudConfig;
   const invalid = new Set<string>();
   const openPaths = new Set<string>(['@Kinh tế']);
 
@@ -162,18 +145,9 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   const errBox = el('ul', 'cfgm-errors');
   const btns = el('div', 'cfgm-btns');
   const cloudBox = el('div', 'cfgm-cloud');
-  cloudBox.appendChild(el('p', 'cfgm-cloud-src', sourceLine(opts.source, opts.cloudUpdatedAt)));
+  const cloudSrc = el('p', 'cfgm-cloud-src', sourceLine(opts.cloudUpdatedAt));
+  cloudBox.appendChild(cloudSrc);
   const cloudRow = el('div', 'cfgm-cloud-row');
-  const codeIn = el('input', 'cfgm-in wide');
-  codeIn.type = 'password';
-  codeIn.autocomplete = 'off';
-  codeIn.placeholder = 'Mã quản trị';
-  codeIn.setAttribute('aria-label', 'Mã quản trị');
-  try {
-    codeIn.value = sessionStorage.getItem('ps.adminCode') ?? '';
-  } catch {
-    /* bị chặn lưu trữ */
-  }
   const cloudSaveBtn = el('button', 'cfgm-btn', 'Lưu lên cloud (áp dụng cho mọi người)');
   cloudSaveBtn.type = 'button';
   const cloudClearBtn = el('button', 'cfgm-btn', 'Gỡ cấu hình cloud (về mặc định)');
@@ -181,16 +155,14 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   const cloudClearNo = el('button', 'cfgm-btn', 'Hủy');
   cloudClearNo.type = 'button';
   cloudClearNo.style.display = 'none';
-  cloudRow.append(codeIn, cloudSaveBtn, cloudClearBtn, cloudClearNo);
-  const overrideNote = el('p', 'cfgm-cloud-note', "Trình duyệt này đang dùng cấu hình riêng — cập nhật cloud sẽ không áp dụng cho đến khi bấm 'Bỏ cấu hình riêng'");
-  overrideNote.style.color = '#ffb300';
-  overrideNote.style.fontSize = '13px';
-  const syncOverrideNote = (): void => {
-    overrideNote.style.display = (opts.hasOverride ? opts.hasOverride() : opts.source === 'local') ? '' : 'none';
-  };
-  syncOverrideNote();
-  cloudBox.append(overrideNote, cloudRow, el('p', 'cfgm-cloud-note', 'Cấu hình cloud áp dụng cho mọi người chơi (ván sau). Cần mã quản trị. Người có bản riêng trong trình duyệt vẫn dùng bản riêng.'));
-  if (!opts.onCloudSave) cloudBox.style.display = 'none';
+  cloudRow.append(cloudSaveBtn, cloudClearBtn, cloudClearNo);
+  cloudBox.append(cloudRow, el('p', 'cfgm-cloud-note', 'Cấu hình cloud áp dụng cho mọi người chơi (từ ván sau).'));
+  if (opts.note) {
+    const note = el('p', 'cfgm-cloud-note', opts.note);
+    note.style.color = '#ffb300';
+    note.style.fontSize = '13px';
+    cloudBox.insertBefore(note, cloudRow);
+  }
   foot.append(cloudBox, status, btns);
   panel.append(head, body, foot);
 
@@ -200,14 +172,16 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     btns.appendChild(b);
     return b;
   };
-  const saveBtn = mkBtn('Lưu', 'primary');
-  const applyBtn = mkBtn('Áp dụng & chơi lại');
   const resetBtn = mkBtn(RESET_LABEL);
   const resetNo = mkBtn('Hủy');
   resetNo.style.display = 'none';
   const exportBtn = mkBtn('Xuất JSON');
   const importBtn = mkBtn('Nhập JSON');
   const closeBtn = mkBtn('Đóng');
+  if (!opts.onClose) {
+    closeBtn.style.display = 'none';
+    closeX.style.display = 'none';
+  }
   const file = el('input');
   file.type = 'file';
   file.accept = '.json,application/json';
@@ -221,11 +195,12 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
 
   /** Lỗi gộp (ràng buộc chéo, số âm...) của bản nháp hiện tại. */
   const draftErrors = (): string[] => mergeConfig(DEFAULT_CONFIG, draft).errors;
+  /** Bản nháp đang có lỗi: không cho lưu lên cloud / xuất. */
+  let saveBlocked = false;
   let refreshSave = (): void => {
     const errs = draftErrors();
     const blocked = invalid.size > 0 || errs.length > 0;
-    saveBtn.disabled = blocked;
-    applyBtn.disabled = blocked;
+    saveBlocked = blocked;
     exportBtn.disabled = blocked;
     if (blocked) {
       const lines = [...[...invalid].map((p) => `${labelFor(p)} (${p}): giá trị không hợp lệ`), ...errs];
@@ -444,56 +419,27 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     document.removeEventListener('keydown', onKey, true);
     overlay.remove();
     openMenu = null;
-    closeActive = null;
-    opts.onClose();
+    opts.onClose?.();
   };
   function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape' && opts.onClose) close();
   }
   document.addEventListener('keydown', onKey, true);
 
-  /** Lần bấm đầu của "Áp dụng & chơi lại" khi ván đang chơi chỉ cảnh báo. */
-  let applyArmed = false;
   const cancelResetConfirm = (): void => {
     resetBtn.textContent = RESET_LABEL;
     resetBtn.classList.remove('danger');
     resetNo.style.display = 'none';
   };
 
-  saveBtn.addEventListener('click', () => {
-    cancelResetConfirm();
-    applyArmed = false;
-    const ok = opts.onSave(structuredClone(draft));
-    syncOverrideNote();
-    if (ok === false) setStatus('Không lưu được (trình duyệt chặn lưu trữ).', 'bad');
-    else setStatus('Đã lưu. Sẽ áp dụng từ ván sau.', 'ok');
-  });
-  applyBtn.addEventListener('click', () => {
-    cancelResetConfirm();
-    if (opts.runActive() && !applyArmed) {
-      applyArmed = true;
-      setStatus(APPLY_WARNING, 'bad');
-      return;
-    }
-    const cfg = structuredClone(draft);
-    document.removeEventListener('keydown', onKey, true);
-    overlay.remove();
-    openMenu = null;
-    closeActive = null;
-    opts.onApplyAndRestart(cfg);
-    opts.onClose();
-  });
   resetBtn.addEventListener('click', () => {
     if (resetBtn.classList.contains('danger')) {
       cancelResetConfirm();
-      const ok = opts.onReset?.();
-      syncOverrideNote();
-      draft = structuredClone(opts.fallback ? opts.fallback() : DEFAULT_CONFIG);
+      draft = structuredClone(cloudCfg ?? DEFAULT_CONFIG);
       invalid.clear();
       errBox.dataset.import = '';
       renderForm();
-      if (ok === false) setStatus('Đã đặt lại form nhưng không xóa được bản lưu trong trình duyệt.', 'bad');
-      else setStatus('Đã bỏ cấu hình riêng (dùng cấu hình cloud nếu có, không thì mặc định). Áp dụng từ ván sau.', 'ok');
+      setStatus('Đã bỏ mọi chỉnh sửa chưa lưu — đang hiện cấu hình cloud.', 'ok');
     } else {
       resetBtn.textContent = 'Bấm lần nữa để xác nhận';
       resetBtn.classList.add('danger');
@@ -503,15 +449,6 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   resetNo.addEventListener('click', cancelResetConfirm);
 
   // ---------- Cloud ----------
-  const rememberCode = (): string => {
-    const code = codeIn.value;
-    try {
-      sessionStorage.setItem('ps.adminCode', code);
-    } catch {
-      /* bỏ qua */
-    }
-    return code;
-  };
   const cloudErr = (e: 'code' | 'network' | 'offline'): string => (e === 'code' ? 'Sai mã quản trị' : 'Không kết nối được Supabase');
   const cancelClearConfirm = (): void => {
     cloudClearBtn.textContent = 'Gỡ cấu hình cloud (về mặc định)';
@@ -521,11 +458,11 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   let cloudBusy = false;
   const setCloudBusy = (b: boolean): void => {
     cloudBusy = b;
-    cloudSaveBtn.disabled = b || saveBtn.disabled;
+    cloudSaveBtn.disabled = b || saveBlocked;
     cloudClearBtn.disabled = b;
   };
   const syncCloudSave = (): void => {
-    cloudSaveBtn.disabled = cloudBusy || saveBtn.disabled;
+    cloudSaveBtn.disabled = cloudBusy || saveBlocked;
   };
   const baseRefresh = refreshSave;
   refreshSave = (): void => {
@@ -533,24 +470,29 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     syncCloudSave();
   };
   cloudSaveBtn.addEventListener('click', async () => {
-    if (cloudBusy || !opts.onCloudSave || saveBtn.disabled) return;
+    if (cloudBusy || saveBlocked) return;
     cancelClearConfirm();
-    const code = rememberCode();
     setCloudBusy(true);
     setStatus('Đang lưu lên cloud...');
     let r: CloudWrite;
+    // Chụp bản gửi đi: draft có thể bị sửa trong lúc chờ, nhưng cloud chỉ có bản này.
+    const sent = structuredClone(draft);
     try {
-      r = await opts.onCloudSave(code, structuredClone(draft));
+      r = await opts.onCloudSave(sent);
     } catch {
       r = { ok: false, error: 'network' };
     } finally {
       setCloudBusy(false);
     }
-    if (r.ok) setStatus('Đã lưu lên cloud — người chơi nhận bộ số mới ở ván sau', 'ok');
+    if (r.ok) {
+      cloudCfg = sent;
+      cloudSrc.textContent = sourceLine(r.updatedAt);
+      setStatus('Đã lưu lên cloud — người chơi nhận bộ số mới ở ván sau', 'ok');
+    }
     else setStatus(cloudErr(r.error), 'bad');
   });
   cloudClearBtn.addEventListener('click', async () => {
-    if (cloudBusy || !opts.onCloudClear) return;
+    if (cloudBusy) return;
     if (!cloudClearBtn.classList.contains('danger')) {
       cloudClearBtn.textContent = 'Bấm lần nữa để gỡ cho mọi người';
       cloudClearBtn.classList.add('danger');
@@ -558,18 +500,21 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
       return;
     }
     cancelClearConfirm();
-    const code = rememberCode();
     setCloudBusy(true);
     setStatus('Đang gỡ cấu hình cloud...');
     let r: CloudClear;
     try {
-      r = await opts.onCloudClear(code);
+      r = await opts.onCloudClear();
     } catch {
       r = { ok: false, error: 'network' };
     } finally {
       setCloudBusy(false);
     }
-    if (r.ok) setStatus('Đã gỡ cấu hình cloud — người chơi về mặc định ở ván sau', 'ok');
+    if (r.ok) {
+      cloudCfg = null;
+      cloudSrc.textContent = sourceLine(null);
+      setStatus('Đã gỡ cấu hình cloud — người chơi về mặc định ở ván sau', 'ok');
+    }
     else setStatus(cloudErr(r.error), 'bad');
   });
   cloudClearNo.addEventListener('click', cancelClearConfirm);
@@ -621,8 +566,8 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     renderForm();
     showErrors(r.errors);
     errBox.dataset.import = r.errors.length ? '1' : '';
-    if (r.errors.length) setStatus(`Đã nạp với ${r.errors.length} lỗi (giá trị sai giữ giá trị cũ). Bấm Lưu để lưu.`, 'bad');
-    else setStatus('Đã nạp file. Bấm Lưu để lưu.', 'ok');
+    if (r.errors.length) setStatus(`Đã nạp với ${r.errors.length} lỗi (giá trị sai giữ giá trị cũ). Bấm Lưu lên cloud để lưu.`, 'bad');
+    else setStatus('Đã nạp file. Bấm Lưu lên cloud để lưu.', 'ok');
   });
   closeBtn.addEventListener('click', close);
   closeX.addEventListener('click', close);
@@ -631,5 +576,4 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   setStatus('Ô có chấm cam là khác mặc định; ↺ để trả về mặc định.');
   document.body.appendChild(overlay);
   openMenu = overlay;
-  closeActive = close;
 }

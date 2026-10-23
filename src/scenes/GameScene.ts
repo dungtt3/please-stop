@@ -1,12 +1,11 @@
 import Phaser from 'phaser';
-import type { GameConfig } from '../config';
 import { createGame } from '../sim/state';
 import { restoreGame, type RunSave } from '../sim/save';
 import { tick } from '../sim/game';
 import { dragUnit } from '../sim/commands';
 import { canMerge, computeStats } from '../sim/units';
 import { unitPos } from '../sim/combat';
-import { enemyPos, modifierOf } from '../sim/enemies';
+import { modifierOf } from '../sim/enemies';
 import { pathTiles, tileCenter } from '../sim/path';
 import type { CommandResult, GameEvent, GameState, Unit, Vec } from '../sim/types';
 import { TopBar } from '../ui/TopBar';
@@ -15,16 +14,22 @@ import { Hand } from '../ui/Hand';
 import { UnitPanel } from '../ui/UnitPanel';
 import { QuizModal } from '../ui/QuizModal';
 import { ResultScreen } from '../ui/ResultScreen';
+import { PauseMenu } from '../ui/PauseMenu';
+import { sfx } from '../audio/sfx';
 import { Banner, Toast } from '../ui/Toast';
-import { closeConfigMenu, openConfigMenu } from '../ui/ConfigMenu';
-import { browserStore, loadSavedConfig, resetConfig, saveConfig } from '../settings/configStore';
-import { resolveConfig, type ConfigSource } from '../settings/resolveConfig';
+import { browserStore } from '../settings/configStore';
+import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
-import { clearActiveConfig, recordRun, saveActiveConfig } from '../net/cloud';
+import { recordRun, TIMEOUT_MS } from '../net/cloud';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
-import { clearCloudCache, getCloudCache, refreshCloudCache } from '../net/cloudCache';
+import { PointerShield } from './PointerShield';
+import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
+import { BossBar } from '../ui/BossBar';
+import { BoardViews } from '../visuals/BoardViews';
+import { Effects } from '../visuals/effects';
+import { getVisuals } from '../visuals/loader';
 
 const DRAG_THRESHOLD = 8;
 
@@ -46,20 +51,31 @@ export class GameScene extends Phaser.Scene {
   private originX = 0;
   private originY = 0;
   private board!: Phaser.GameObjects.Graphics;
+  /** Viền gộp + vùng tầm (giữa lớp nhân vật và lớp quái). */
   private dyn!: Phaser.GameObjects.Graphics;
+  /** Hình kéo theo con trỏ khi kéo nhân vật (trên cùng bàn chơi). */
+  private ghost!: Phaser.GameObjects.Graphics;
+  /** View riêng cho từng nhân vật / quái / lính. */
+  private views!: BoardViews;
+  /** Đạn, hiệu ứng trúng đích và skill. */
+  private effects!: Effects;
+  private bossBar!: BossBar;
   private topBar!: TopBar;
   private bottomBar!: BottomBar;
   private hand!: Hand;
   private unitPanel!: UnitPanel;
   private quizModal!: QuizModal;
   private resultScreen!: ResultScreen;
+  private pauseMenu!: PauseMenu;
   private toast!: Toast;
   private banner!: Banner;
-  private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
-  private source: ConfigSource = 'default';
+  /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
+  private shield = new PointerShield();
   private runRecorded = false;
+  /** Đã phát tiếng thắng/thua của ván này (chỉ một lần). */
+  private endSounded = false;
   private saver!: RunSaver;
   private manager!: SaveManager;
   private accountName: string | null = null;
@@ -81,14 +97,15 @@ export class GameScene extends Phaser.Scene {
       onUnsaved: () => this.toast.show('Trình duyệt chặn lưu trữ — ván này sẽ không được lưu'),
     });
     // Scene được dùng lại giữa các lần vào ván: xóa trạng thái cũ (đối tượng hiển thị đã bị hủy).
-    this.starTexts = new Map();
     this.staticTexts = [];
     this.menuOpen = false;
+    this.shield = new PointerShield();
     this.halted = false;
     this.speed = 1;
     this.selectedUnitId = null;
     this.drag = null;
     this.runRecorded = false;
+    this.endSounded = false;
     const cfg = this.resolveCfg().config;
     if (start.kind === 'new') {
       this.state = createGame(Date.now(), cfg);
@@ -98,10 +115,14 @@ export class GameScene extends Phaser.Scene {
         this.state.phase = 'lost';
         // Bản ghi ps_runs do update() ghi đúng một lần (nếu lần load này xóa được bản lưu).
         this.runRecorded = !start.record;
+        this.endSounded = true; // ván thua đã báo từ lần trước: không phát lại tiếng
       }
     }
     this.board = this.add.graphics().setDepth(0);
-    this.dyn = this.add.graphics().setDepth(10);
+    this.dyn = this.add.graphics().setDepth(11);
+    this.ghost = this.add.graphics().setDepth(30);
+    this.views = this.makeViews();
+    this.effects = this.makeEffects();
     this.topBar = new TopBar(
       this,
       () => {
@@ -122,12 +143,33 @@ export class GameScene extends Phaser.Scene {
       this.selectedUnitId = null;
     });
     this.quizModal = new QuizModal(this, getState, act);
+    this.bossBar = new BossBar(this);
     this.resultScreen = new ResultScreen(
       this,
       () => this.restart(),
       () => this.scene.start('Start'),
       () => this.accountName ?? '',
     );
+
+    this.pauseMenu = new PauseMenu(this, {
+      onToggle: (open) => {
+        this.menuOpen = open;
+        this.shield.arm();
+        sfx.setSuspended(open);
+        if (open) this.drag = null;
+      },
+      phase: () => this.state.phase,
+      saveAndLeave: async () => {
+        await this.saver.saveAndWait(this.state, TIMEOUT_MS);
+        this.saver.stop();
+        this.scene.start('Start');
+      },
+      quitAsLoss: () => {
+        // Ván đã mất quyền (xung đột/đã kết thúc): chỉ về màn hình chính, không ghi thêm.
+        if (this.saver.live) this.recordResult(false);
+        this.scene.start('Start');
+      },
+    });
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
@@ -137,15 +179,23 @@ export class GameScene extends Phaser.Scene {
     });
 
     const onVisibility = (): void => {
-      if (document.visibilityState === 'hidden') this.saver.flushPrep(this.state);
+      if (document.visibilityState === 'hidden') {
+        this.saver.flushPrep(this.state);
+        sfx.setSuspended(true);
+      } else {
+        sfx.setSuspended(this.menuOpen);
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      this.menuOpen = false;
+      sfx.setSuspended(document.visibilityState === 'hidden');
       this.saver.stop();
       this.conflictTimer?.remove(false);
       this.conflictTimer = null;
-      closeConfigMenu();
+      this.views.destroy();
+      this.effects.destroy();
     });
 
     if (start.kind === 'new') this.saver.beginNew(this.state);
@@ -155,17 +205,17 @@ export class GameScene extends Phaser.Scene {
 
   private onSaveConflict(): void {
     this.halted = true;
-    closeConfigMenu();
+    // Popup (depth 450) che biển thông báo (350): đóng trước để người chơi đọc được. halted đã giữ ván đứng yên.
+    this.pauseMenu?.close();
     this.banner.show('Ván này đã được chơi ở thiết bị khác');
     this.conflictTimer = this.time.delayedCall(2000, () => this.scene.start('Start'));
   }
 
   /** Tạo lại ván mới và xóa mọi đối tượng hiển thị. */
-  restart(cfg?: GameConfig): void {
-    const r = this.resolveCfg();
-    this.state = createGame(Date.now(), cfg ?? r.config);
-    if (cfg) this.source = 'local';
+  restart(): void {
+    this.state = createGame(Date.now(), this.resolveCfg().config);
     this.runRecorded = false;
+    this.endSounded = false;
     this.halted = false;
     this.conflictTimer?.remove(false);
     this.conflictTimer = null;
@@ -176,67 +226,44 @@ export class GameScene extends Phaser.Scene {
     this.drag = null;
     this.speed = 1;
     this.hand.reset();
-    for (const t of this.starTexts.values()) t.destroy();
-    this.starTexts.clear();
+    this.views.destroy();
+    this.views = this.makeViews();
+    this.effects.destroy();
+    this.effects = this.makeEffects();
     this.dyn.clear();
+    this.ghost.clear();
     this.layout();
     this.drawBoard();
   }
 
+  private makeViews(): BoardViews {
+    return new BoardViews(this, getVisuals(), (v) => this.toScreen(v), () => this.tileSize);
+  }
+
+  private makeEffects(): Effects {
+    return new Effects(this, getVisuals(), (v) => this.toScreen(v), () => this.tileSize, () => this.state.config.skills.mage.splashRadius);
+  }
+
+  /** Người chơi luôn dùng cấu hình cloud (hoặc mặc định nếu cloud trống/lỗi). */
   private resolveCfg(): ReturnType<typeof resolveConfig> {
-    const r = resolveConfig({ local: loadSavedConfig(browserStore()), cloud: getCloudCache()?.config ?? null });
-    this.source = r.source;
+    const r = resolveConfig({ cloud: getCloudCache()?.config ?? null });
     if (r.errors.length) console.warn('Cấu hình cloud có giá trị không hợp lệ, đã dùng mặc định cho các trường đó:', r.errors);
     return r;
   }
 
-  /** Chỉ tạo bản riêng khi khác cấu hình đang đến từ cloud/mặc định (hoặc đã có bản riêng). */
-  private needsOverride(cfg: GameConfig): boolean {
-    if (loadSavedConfig(browserStore())) return true;
-    const base = resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config;
-    return configHash(cfg) !== configHash(base);
+  /** Nút ⚙: mở popup tạm dừng (không mở khi đang có màn kết quả, quiz hoặc ván bị đóng băng). */
+  private openMenu(): void {
+    if (this.resultScreen.open || this.quizModal.open || this.halted) return;
+    this.pauseMenu.show();
   }
 
-  /** Mở menu cấu hình (DOM overlay); ván tạm dừng trong lúc mở. */
-  private openMenu(): void {
-    if (this.menuOpen || this.halted) return;
-    this.menuOpen = true;
-    this.drag = null;
-    openConfigMenu({
-      current: structuredClone(this.state.config),
-      source: this.source,
-      hasOverride: () => loadSavedConfig(browserStore()) !== null,
-      cloudUpdatedAt: getCloudCache()?.updatedAt ?? null,
-      fallback: () => resolveConfig({ local: null, cloud: getCloudCache()?.config ?? null }).config,
-      onCloudSave: async (code, cfg) => {
-        const r = await saveActiveConfig(code, cfg);
-        if (r.ok) await refreshCloudCache();
-        return r;
-      },
-      onCloudClear: async (code) => {
-        const r = await clearActiveConfig(code);
-        if (r.ok) clearCloudCache();
-        return r;
-      },
-      onSave: (cfg) => (this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true),
-      runActive: () => this.saver.live,
-      onApplyAndRestart: (cfg) => {
-        // Bỏ ván đang chơi dở: tính thua, xóa bản lưu rồi mới tạo ván mới.
-        if (this.saver.live) {
-          const s = this.state;
-          this.runRecorded = true;
-          void recordRun({ waveReached: s.wave, won: false, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
-          this.saver.end();
-        }
-        const saved = this.needsOverride(cfg) ? saveConfig(browserStore(), cfg) : true;
-        this.restart(cfg);
-        if (!saved) this.toast.show('Không lưu được cấu hình — chỉ áp dụng cho ván này');
-      },
-      onReset: () => resetConfig(browserStore()),
-      onClose: () => {
-        this.menuOpen = false;
-      },
-    });
+  /** Ghi kết quả ván lên cloud đúng một lần và xóa bản lưu. Dùng cho thắng/thua tự nhiên và thoát giữa wave (tính thua). */
+  private recordResult(won: boolean): void {
+    if (this.runRecorded) return;
+    this.runRecorded = true;
+    const s = this.state;
+    void recordRun({ waveReached: s.wave, won, kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
+    this.saver.end();
   }
 
   toScreen(v: Vec): { x: number; y: number } {
@@ -299,6 +326,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onDown(p: Phaser.Input.Pointer): void {
+    if (this.shield.consume()) return;
     if (this.uiOwns(p)) return;
     const slot = this.slotAt(p.x, p.y);
     if (this.hand.selectedId !== null && slot >= 0 && this.state.slots[slot] !== null) {
@@ -334,6 +362,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_: number, delta: number): void {
+    this.shield.reset();
     const s = this.state;
     if (!this.menuOpen && !this.halted) {
       const dt = Math.min(delta / 1000, 0.25) * this.speed;
@@ -341,13 +370,18 @@ export class GameScene extends Phaser.Scene {
       tick(s, dt);
       if (live) this.saver.addSeconds(dt);
     }
-    if (!this.runRecorded && (s.phase === 'won' || s.phase === 'lost')) {
-      this.runRecorded = true;
-      void recordRun({ waveReached: s.wave, won: s.phase === 'won', kills: s.kills, durationS: this.saver.runSeconds, configHash: configHash(s.config) });
-      this.saver.end();
+    if (s.phase === 'won' || s.phase === 'lost') {
+      this.recordResult(s.phase === 'won');
+      if (!this.endSounded) {
+        this.endSounded = true;
+        sfx.play(s.phase === 'won' ? 'win' : 'lose');
+      }
     }
     this.saver.tick(s, delta, this.menuOpen || this.halted);
+    // Trước khi sync view: quái vừa chết còn view để chạy hoạt ảnh chết.
+    for (const e of s.events) this.views.onEvent(e);
     this.render();
+    this.bossBar.update(s);
     this.topBar.update(s, this.speed);
     this.bottomBar.update(s);
     this.hand.update(s);
@@ -374,31 +408,19 @@ export class GameScene extends Phaser.Scene {
     const g = this.dyn;
     const t = this.tileSize;
     g.clear();
+    this.ghost.clear();
     const dragging = this.drag?.moving ? this.drag : null;
     const dragId = dragging ? s.slots[dragging.slot] : null;
     const dragUnitObj = dragId !== null && dragId !== undefined ? s.units.get(dragId) : undefined;
 
-    const live = new Set<number>();
-    for (const u of s.units.values()) {
-      live.add(u.id);
-      const c = this.unitScreen(u);
-      const isDragged = dragUnitObj?.id === u.id;
-      this.drawUnit(g, u, c.x, c.y, isDragged ? 0.3 : 1);
-      if (dragUnitObj && !isDragged && canMerge(s.config, dragUnitObj, u)) {
-        const blink = 0.5 + 0.5 * Math.sin(this.time.now / 100);
+    this.views.sync(s, { draggingUnitId: dragUnitObj ? dragUnitObj.id : null });
+
+    if (dragUnitObj) {
+      const blink = 0.5 + 0.5 * Math.sin(this.time.now / 100);
+      for (const u of s.units.values()) {
+        if (u.id === dragUnitObj.id || !canMerge(s.config, dragUnitObj, u)) continue;
+        const c = this.unitScreen(u);
         g.lineStyle(4, COLORS.highlight, 0.4 + 0.6 * blink).strokeRect(c.x - t / 2 + 1, c.y - t / 2 + 1, t - 2, t - 2);
-      }
-      let st = this.starTexts.get(u.id);
-      if (!st) {
-        st = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '12px', color: '#fff176', fontStyle: 'bold' }).setOrigin(0, 0).setDepth(20);
-        this.starTexts.set(u.id, st);
-      }
-      st.setText('★' + u.level).setPosition(c.x - t / 2 + 4, c.y - t / 2 + 3).setAlpha(isDragged ? 0.3 : 1);
-    }
-    for (const [id, tx] of this.starTexts) {
-      if (!live.has(id)) {
-        tx.destroy();
-        this.starTexts.delete(id);
       }
     }
 
@@ -412,27 +434,7 @@ export class GameScene extends Phaser.Scene {
       this.selectedUnitId = null;
     }
 
-    for (const e of s.enemies) {
-      if (e.dead) continue;
-      const c = this.toScreen(enemyPos(s, e));
-      const r = (e.kind === 'boss' ? 0.5 : 0.25) * t;
-      g.fillStyle(s.config.enemies[e.kind].color, 1).fillCircle(c.x, c.y, r);
-      if (e.burn) g.lineStyle(3, COLORS.burn, 1).strokeCircle(c.x, c.y, r + 1);
-      this.bar(g, c.x, c.y - r - 6, r * 2, 4, e.hp / e.maxHp, 0xe53935);
-    }
-
-    for (const m of s.minions) {
-      const c = this.toScreen(m.pos);
-      g.fillStyle(COLORS.minion, 1).fillCircle(c.x, c.y, t * 0.14);
-      this.bar(g, c.x, c.y - t * 0.14 - 5, t * 0.3, 3, m.hp / m.maxHp, 0x66bb6a);
-    }
-
-    if (dragging && dragUnitObj) this.drawUnit(g, dragUnitObj, dragging.x, dragging.y, 0.9);
-  }
-
-  private bar(g: Phaser.GameObjects.Graphics, cx: number, y: number, w: number, h: number, frac: number, color: number): void {
-    g.fillStyle(0x000000, 0.6).fillRect(cx - w / 2, y, w, h);
-    g.fillStyle(color, 1).fillRect(cx - w / 2, y, w * Math.max(0, Math.min(1, frac)), h);
+    if (dragging && dragUnitObj) this.drawUnit(this.ghost, dragUnitObj, dragging.x, dragging.y, 0.9);
   }
 
   private floatText(v: Vec, txt: string, color: string, size: number): void {
@@ -446,18 +448,30 @@ export class GameScene extends Phaser.Scene {
 
   private handleEvent(e: GameEvent): void {
     switch (e.type) {
+      case 'attack':
+        this.effects.onEvent(e);
+        sfx.play(e.crit ? 'crit' : 'hit');
+        break;
+      case 'summon':
+        sfx.play('summon');
+        break;
+      case 'merge':
+        sfx.play('merge');
+        break;
+      case 'quiz':
+        sfx.play(e.result === 'correct' ? 'quizRight' : 'quizWrong');
+        break;
       case 'damage':
         this.floatText(e.pos, String(Math.round(e.amount)), e.crit ? COLORS.crit : '#ffffff', e.crit ? 22 : 14);
         break;
       case 'kill':
         this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 16);
+        sfx.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         break;
-      case 'skill': {
-        const c = this.toScreen(e.pos);
-        const ring = this.add.circle(c.x, c.y, this.tileSize * 0.3, 0xffffff, 0.35).setStrokeStyle(3, 0xfff59d).setDepth(40);
-        this.tweens.add({ targets: ring, scale: 3, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
+      case 'skill':
+        this.effects.onEvent(e);
+        sfx.play(`skill.${e.skill}`);
         break;
-      }
       case 'cardGranted':
         this.hand.flash(e.card.id);
         break;
@@ -466,6 +480,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'waveStart': {
         this.saver.waveStarted(this.state);
+        sfx.play('waveStart');
         const m = this.state.modifier ? this.state.config.modifiers[this.state.modifier].name : '';
         this.banner.show(m ? `Wave ${e.wave}
 ${m}` : `Wave ${e.wave}`);
@@ -473,10 +488,12 @@ ${m}` : `Wave ${e.wave}`);
       }
       case 'waveEnd':
         this.saver.waveEnded(this.state);
+        sfx.play('waveEnd');
         this.banner.show(`+${e.reward} vàng`, COLORS.gold);
         break;
       case 'leak':
         this.cameras.main.shake(150, 0.004);
+        sfx.play('leak');
         break;
       default:
         break;

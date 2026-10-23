@@ -27,6 +27,7 @@ export function summon(s: GameState): CommandResult {
   s.units.set(unit.id, unit);
   s.slots[slot] = unit.id;
   s.summonCount++;
+  s.events.push({ type: 'summon', unitId: unit.id });
   return OK;
 }
 
@@ -53,6 +54,7 @@ export function dragUnit(s: GameState, from: number, to: number): CommandResult 
     s.units.set(merged.id, merged);
     s.slots[to] = merged.id;
     s.slots[from] = null;
+    s.events.push({ type: 'merge', unitId: merged.id });
     return OK;
   }
   s.slots[from] = toId;

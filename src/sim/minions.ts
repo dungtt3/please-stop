@@ -1,12 +1,13 @@
 import { distanceOfTile, pathTiles, tileCenter } from './path';
 import { damageEnemy, unitPos } from './combat';
+import { enemyPos } from './enemies';
 import { newId } from './state';
-import type { GameState, Unit, UnitStats } from './types';
+import type { GameState, Unit, UnitStats, Vec } from './types';
 
-/** Tạo lính tại ô đường gần chủ nhất trong tầm. false nếu đủ lính hoặc không có ô trong tầm. */
-export function spawnMinion(state: GameState, owner: Unit, stats: UnitStats): boolean {
+/** Tạo lính tại ô đường gần chủ nhất trong tầm. Trả vị trí lính; null nếu đủ lính hoặc không có ô trong tầm. */
+export function spawnMinion(state: GameState, owner: Unit, stats: UnitStats): Vec | null {
   const cfg = state.config.skills.summoner;
-  if (state.minions.filter((m) => m.ownerId === owner.id).length >= cfg.maxMinions) return false;
+  if (state.minions.filter((m) => m.ownerId === owner.id).length >= cfg.maxMinions) return null;
   const from = unitPos(state, owner);
   let best: { x: number; y: number } | null = null;
   let bestDist = Infinity;
@@ -15,12 +16,13 @@ export function spawnMinion(state: GameState, owner: Unit, stats: UnitStats): bo
     const d = Math.hypot(c.x - from.x, c.y - from.y);
     if (d <= stats.range && d < bestDist) { best = t; bestDist = d; }
   }
-  if (best === null) return false;
+  if (best === null) return null;
+  const pos = tileCenter(best);
   const hp = cfg.minionHpPerLevel * owner.level;
   state.minions.push({
     id: newId(state),
     ownerId: owner.id,
-    pos: tileCenter(best),
+    pos,
     pathDistance: distanceOfTile(state.map.path, best),
     hp,
     maxHp: hp,
@@ -28,7 +30,7 @@ export function spawnMinion(state: GameState, owner: Unit, stats: UnitStats): bo
     attackCooldown: 0,
     lifetime: cfg.minionLifetime,
   });
-  return true;
+  return { ...pos };
 }
 
 /** Gỡ chặn mọi quái bị lính `minionId` giữ. */
@@ -56,6 +58,8 @@ export function updateMinions(state: GameState, dt: number): void {
     m.attackCooldown -= dt;
     if (m.attackCooldown <= 0) {
       if (blocked.length > 0) {
+        const to = enemyPos(state, blocked[0]);
+        state.events.push({ type: 'attack', source: 'minion', id: m.id, classId: 'minion', from: { ...m.pos }, to, crit: false });
         damageEnemy(state, blocked[0], m.damage, false);
         m.attackCooldown = 1 / cfg.minionAttackRate;
       } else {
