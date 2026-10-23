@@ -6,7 +6,7 @@ import { COLORS, RARITY_COLOR, textStyle } from '../ui/theme';
 import type { VisualRegistry } from './loader';
 import type { VisualKey } from './manifest';
 import { applyEntry } from './applyEntry';
-import { CLASS_SHAPE, ENEMY_SHAPE, RARITY_PIPS, shapePoints } from './shapes';
+import { CLASS_SHAPE, ENEMY_SHAPE, PIP_R, rarityPipCenters, shapePoints } from './shapes';
 import type { ShapeKind } from './shapes';
 import { formatNum, hpFraction, hpValue } from './viewMath';
 
@@ -68,12 +68,9 @@ export function drawUnitBody(
 
 /** Chấm độ hiếm (rare 1, epic 2) ở góc trên phải ô, vẽ đè lên sprite. */
 export function drawRarityPips(g: Phaser.GameObjects.Graphics, rarity: Rarity, tile: number, cx: number, cy: number, alpha = 1): void {
-  const n = RARITY_PIPS[rarity];
-  for (let i = 0; i < n; i++) {
-    const px = cx + tile / 2 - 8 - i * 11;
-    const py = cy - tile / 2 + 8;
-    g.fillStyle(RARITY_COLOR[rarity], alpha).fillCircle(px, py, 5);
-    g.lineStyle(2, 0xffffff, alpha).strokeCircle(px, py, 5);
+  for (const p of rarityPipCenters(rarity, tile, cx, cy)) {
+    g.fillStyle(RARITY_COLOR[rarity], alpha).fillCircle(p.x, p.y, PIP_R);
+    g.lineStyle(2, 0xffffff, alpha).strokeCircle(p.x, p.y, PIP_R);
   }
 }
 

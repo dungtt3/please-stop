@@ -102,6 +102,16 @@ describe('recordBest', () => {
     expect(recordBest(s, { wave: NaN, kills: 1, won: false })).toEqual({ previous: null, isNew: false });
     expect(s.data[BEST_KEY]).toBeUndefined();
   });
+  test('wave 0 run is not recorded (first-time hint stays)', () => {
+    const s = mem();
+    expect(recordBest(s, b(0, 0))).toEqual({ previous: null, isNew: false });
+    expect(recordBest(s, b(0, 7))).toEqual({ previous: null, isNew: false });
+    expect(s.data[BEST_KEY]).toBeUndefined();
+    const prev = JSON.stringify(b(2, 5));
+    const t = mem({ [BEST_KEY]: prev });
+    expect(recordBest(t, b(0, 0))).toEqual({ previous: b(2, 5), isNew: false });
+    expect(t.data[BEST_KEY]).toBe(prev);
+  });
   test('throwing or missing store never throws', () => {
     expect(() => recordBest(throwing, b(1, 1))).not.toThrow();
     expect(() => recordBest(null, b(1, 1))).not.toThrow();

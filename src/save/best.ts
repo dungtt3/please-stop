@@ -45,7 +45,8 @@ export function isBetter(a: Best, b: Best | null): boolean {
 export function recordBest(store: KeyValueStore | null, run: Best): { previous: Best | null; isNew: boolean } {
   const previous = readBest(store);
   const clean = parseBest({ wave: Math.round(run.wave), kills: Math.round(run.kills), won: run.won });
-  if (!clean || !isBetter(clean, previous)) return { previous, isNew: false };
+  // Ván chưa tới wave 1 (khởi động lại ngay) không đáng làm kỷ lục: giữ gợi ý lần đầu ở màn bắt đầu.
+  if (!clean || clean.wave < 1 || !isBetter(clean, previous)) return { previous, isNew: false };
   if (store) {
     try {
       store.setItem(BEST_KEY, JSON.stringify(clean));

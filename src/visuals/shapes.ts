@@ -29,8 +29,11 @@ export const RARITY_PIPS: Record<Rarity, number> = {
   epic: 2,
 };
 
-/** Độ bo góc của hình vuông bo (tỉ lệ so với nửa cạnh). */
-const ROUND_Q = 0.35;
+/**
+ * Độ bo góc của hình vuông bo (tỉ lệ so với nửa cạnh). Nhỏ để tank còn cạnh phẳng rõ, khác hình tròn:
+ * với 0,2 trung điểm cạnh cách tâm ≈ 75% bán kính ngoài (hình tròn luôn 100%).
+ */
+const ROUND_Q = 0.2;
 const ROUND_STEPS = 4;
 
 /**
@@ -74,4 +77,18 @@ export function shapePoints(kind: ShapeKind, cx: number, cy: number, r: number, 
       return out;
     }
   }
+}
+
+/** Chấm độ hiếm: bán kính (chưa kể viền 2 px), bước giữa hai chấm, và lề từ mép phải ô tới tâm chấm đầu. */
+export const PIP_R = 4;
+export const PIP_PITCH = 13;
+export const PIP_EDGE = 6;
+
+/** Tâm các chấm độ hiếm ở góc trên phải ô: hai chấm không chạm nhau và chừa chỗ cho nhãn ★N bên trái. */
+export function rarityPipCenters(rarity: Rarity, tile: number, cx: number, cy: number): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < RARITY_PIPS[rarity]; i++) {
+    out.push({ x: cx + tile / 2 - PIP_EDGE - i * PIP_PITCH, y: cy - tile / 2 + PIP_EDGE + 2 });
+  }
+  return out;
 }

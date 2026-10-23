@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CLASS_SHAPE, ENEMY_SHAPE, RARITY_PIPS, shapePoints } from '../../src/visuals/shapes';
+import { CLASS_SHAPE, ENEMY_SHAPE, PIP_R, RARITY_PIPS, rarityPipCenters, shapePoints } from '../../src/visuals/shapes';
 import type { ShapeKind } from '../../src/visuals/shapes';
 
 const COUNTS: Record<ShapeKind, number> = {
@@ -59,3 +59,40 @@ describe('bảng hình', () => {
     expect(RARITY_PIPS).toEqual({ common: 0, rare: 1, epic: 2 });
   });
 });
+
+describe('hình vuông bo (tank) khác hình tròn', () => {
+  test('cạnh phẳng rõ: trung điểm cạnh gần tâm hơn góc (≤ 76% bán kính)', () => {
+    const pts = shapePoints('roundedSquare', 0, 0, 100);
+    const mids = pts.map((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      return Math.hypot((p.x + q.x) / 2, (p.y + q.y) / 2);
+    });
+    expect(Math.max(...pts.map((p) => Math.hypot(p.x, p.y)))).toBeGreaterThan(98);
+    expect(Math.min(...mids)).toBeLessThanOrEqual(76);
+  });
+});
+
+describe('rarityPipCenters', () => {
+  const TILE = 52; // boardTile() mặc định
+  /** Ước lượng thận trọng bề rộng chữ "★N" cỡ 14 px đậm (★ ≈ 14, chữ số ≈ 8) + lề trái 4 px của nhãn. */
+  const STAR_RIGHT = -TILE / 2 + 4 + 22;
+
+  test('số chấm theo độ hiếm', () => {
+    expect(rarityPipCenters('common', TILE, 0, 0)).toHaveLength(0);
+    expect(rarityPipCenters('rare', TILE, 0, 0)).toHaveLength(1);
+    expect(rarityPipCenters('epic', TILE, 0, 0)).toHaveLength(2);
+  });
+
+  test('hai chấm sử thi không chạm nhau (kể cả viền 2 px)', () => {
+    const [a, b] = rarityPipCenters('epic', TILE, 0, 0);
+    expect(Math.abs(a.x - b.x) - 2 * (PIP_R + 1)).toBeGreaterThanOrEqual(2);
+  });
+
+  test('chấm nằm trong ô và không chạm nhãn ★N', () => {
+    for (const p of rarityPipCenters('epic', TILE, 0, 0)) {
+      expect(p.x + PIP_R + 1).toBeLessThanOrEqual(TILE / 2);
+      expect(p.x - PIP_R - 1).toBeGreaterThan(STAR_RIGHT);
+    }
+  });
+});
+
