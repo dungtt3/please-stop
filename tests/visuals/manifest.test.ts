@@ -158,15 +158,28 @@ describe('parseManifest', () => {
   });
 
   test('đường dẫn không an toàn bị bỏ: .., tuyệt đối, ://', () => {
-    const files = ['../secret.png', 'a/../../b.png', 'a\\..\\b.png', '/abs.png', '\\abs.png', 'C:\\x.png', 'C:/x.png', 'https://evil.com/a.png', 'http://x/a.png', '//cdn/a.png', 'data://x'];
+    const files = [
+      '../secret.png', 'a/../../b.png', 'a\\..\\b.png', '/abs.png', '\\abs.png', 'C:\\x.png', 'C:/x.png',
+      'https://evil.com/a.png', 'http://x/a.png', '//cdn/a.png', 'data://x',
+      // mã hóa dấu chấm
+      'a/%2e%2e/%2e%2e/x.png', 'a/.%2e/x.png', 'a/%2E%2E/x.png', 'a/%2e/x.png',
+      // ký tự điều khiển mà bộ phân tích URL bỏ đi
+      'a/.\t./x.png', 'a/.\n./x.png', 'a/.\r./x.png', 'a/\u0000b.png',
+      // scheme không có //
+      'data:image/png;base64,AAAA', 'blob:abc', 'javascript:alert(1)', 'http:evil.com/a.png',
+      // truy vấn, fragment, khoảng trắng, đoạn rỗng/chấm đơn, rỗng
+      'a.png?x=1', 'a.png#frag', 'my sprite.png', 'a//b.png', './a.png', 'a/./b.png', 'a/', '.', '..', '', '   ', 'é.png',
+    ];
     for (const file of files) {
       const r = parseManifest({ 'unit.archer.idle': { ...sheet, file } });
       expect(r.entries, file).toEqual({});
       expect(r.warnings, file).toHaveLength(1);
     }
-    const a = parseManifest({ 'skill.mage': { type: 'atlas', file: 'ok.png', data: '../x.json' } });
-    expect(a.entries).toEqual({});
-    expect(a.warnings).toHaveLength(1);
+    for (const data of ['../x.json', 'a/%2e%2e/x.json', 'a/.\t./x.json', 'data:application/json,{}', 'x.json?y']) {
+      const a = parseManifest({ 'skill.mage': { type: 'atlas', file: 'ok.png', data } });
+      expect(a.entries, data).toEqual({});
+      expect(a.warnings, data).toHaveLength(1);
+    }
   });
 
   test('đường dẫn con hợp lệ được giữ', () => {

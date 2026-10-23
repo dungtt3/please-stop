@@ -48,12 +48,15 @@ const isPosInt = (v: unknown): v is number => typeof v === 'number' && Number.is
 const isPosNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** Đường dẫn tương đối trong `sprites/`: không rỗng, không tuyệt đối, không `..`, không `://`. */
+/**
+ * Đường dẫn tương đối trong `sprites/`, kiểm tra bằng danh sách cho phép (whitelist):
+ * chỉ chữ/số ASCII, `_`, `-`, `.`, `/`; mỗi đoạn không rỗng và không phải `.` hoặc `..`.
+ * Nhờ vậy loại luôn `%2e%2e`, ký tự điều khiển, `:` (data:, blob:, http:, C:), `?`, `#`, `\`, khoảng trắng.
+ */
+const SAFE_PATH = /^[A-Za-z0-9_\-./]+$/;
 const isSafePath = (v: unknown): v is string => {
-  if (typeof v !== 'string' || v.trim() === '') return false;
-  if (v.includes('://')) return false;
-  if (/^[\\/]/.test(v) || /^[a-zA-Z]:/.test(v)) return false;
-  return !v.split(/[\\/]/).includes('..');
+  if (typeof v !== 'string' || !SAFE_PATH.test(v)) return false;
+  return v.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
 };
 
 /** idle/walk lặp mặc định; mọi thứ còn lại chạy một lần. */
@@ -62,7 +65,7 @@ const defaultLoop = (key: string): boolean => key.endsWith('.idle') || key.endsW
 /** Trả về mục hợp lệ, hoặc chuỗi mô tả lỗi. */
 const parseEntry = (key: string, v: unknown): ManifestEntry | string => {
   if (!isRecord(v)) return 'mục phải là object';
-  if (!isSafePath(v.file)) return '`file` phải là đường dẫn tương đối không rỗng trong sprites/ (không có "..", "://")';
+  if (!isSafePath(v.file)) return '`file` phải là đường dẫn tương đối không rỗng trong sprites/ (chỉ gồm chữ, số, _ - . /; không có "..")';
 
   const fps = v.fps === undefined ? DEFAULT_FPS : v.fps;
   if (!isPosNum(fps)) return '`fps` phải là số > 0';

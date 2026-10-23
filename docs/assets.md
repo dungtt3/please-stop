@@ -11,7 +11,10 @@ Khi bạn thả file vào và khai báo, game sẽ tự dùng sprite thay cho h�
 
 Mọi đường dẫn trong manifest là **đường dẫn tương đối bên trong `sprites/`**. Ví dụ file nằm ở
 `public/sprites/units/archer_idle.png` thì ghi `"units/archer_idle.png"`.
-Không dùng `..`, không dùng đường dẫn tuyệt đối (`/...`, `C:\...`) và không dùng URL (`http://...`); mục như vậy sẽ bị bỏ qua.
+Tên file và đường dẫn **chỉ được gồm chữ cái không dấu (a-z, A-Z), chữ số, `_`, `-`, `.` và `/`** (phân cách thư mục).
+Không dùng khoảng trắng, chữ có dấu, `%`, `:`, `?`, `#`, `\`. Không dùng `..` hoặc `.` làm tên thư mục, không bắt đầu bằng `/`,
+không dùng đường dẫn tuyệt đối (`C:\...`) hay URL/scheme (`http://...`, `data:...`, `blob:...`).
+Mục vi phạm sẽ bị bỏ qua (kèm cảnh báo ở console).
 
 ## Danh sách khóa hình
 
