@@ -19,6 +19,32 @@ create policy ps_saves_select on public.ps_saves
 revoke all on public.ps_saves from anon, authenticated;
 grant select on public.ps_saves to authenticated;
 
+-- Read the caller's save. age_ms is computed with the server clock so clients never compare
+-- their own (possibly wrong) clock with updated_at. Security invoker: the select policy above
+-- still applies. Not signed in raises 28000 instead of returning "no save".
+create or replace function public.ps_get_save()
+returns table (run_id uuid, rev bigint, save jsonb, in_wave boolean, device_id uuid, age_ms bigint)
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'not signed in' using errcode = '28000';
+  end if;
+  return query
+    select s.run_id, s.rev, s.save, s.in_wave, s.device_id,
+           (extract(epoch from now() - s.updated_at) * 1000)::bigint
+      from public.ps_saves s
+     where s.user_id = uid;
+end;
+$$;
+revoke all on function public.ps_get_save() from public, anon;
+grant execute on function public.ps_get_save() to authenticated;
+
 -- Compare-and-set write. p_base_rev = 0 means "I expect no save yet" (insert, rev = 1);
 -- otherwise the save is replaced only if run_id and rev still match. Any mismatch raises
 -- PS409 so the client can resolve the conflict.

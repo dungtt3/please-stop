@@ -15,8 +15,8 @@ const bad = {
 };
 const device = (id: string) => mem({ [DEVICE_KEY]: id });
 
+/** Đồng hồ của server giả (khác hẳn đồng hồ máy: tuổi dòng phải tính trên server). */
 let t = 0;
-const now = () => t;
 beforeEach(() => {
   t = 1_000_000_000;
 });
@@ -31,10 +31,13 @@ function mk(o: { runId?: string; deviceId?: string; inWave?: boolean; gold?: num
   return s;
 }
 
-/** Giả lập bảng ps_saves: một dòng cho một người dùng, luật rev/run_id như ps_put_save / ps_end_save. */
+/** Dòng trong bảng giả: như CloudRow nhưng giữ updated_at (theo đồng hồ server `t`) thay cho tuổi. */
+type FakeRow = Omit<CloudRow, 'ageMs'> & { updatedAt: number };
+
+/** Giả lập bảng ps_saves: một dòng cho một người dùng, luật như ps_get_save / ps_put_save / ps_end_save. */
 function fakeCloud(opts: { hang?: boolean } = {}) {
   const f = {
-    row: null as CloudRow | null,
+    row: null as FakeRow | null,
     offline: false,
     endFails: false,
     hang: opts.hang ?? false,
@@ -62,7 +65,9 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
     },
     async fetch(): Promise<CloudRow | null | 'error'> {
       if (f.offline) return 'error';
-      return f.row ? structuredClone(f.row) : null;
+      if (!f.row) return null;
+      const { updatedAt, ...rest } = structuredClone(f.row);
+      return { ...rest, ageMs: t - updatedAt };
     },
     async put(runId: string, baseRev: number, save: RunSave): Promise<PutResult> {
       f.baseRevs.push(baseRev);
@@ -91,24 +96,24 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
   return f satisfies CloudSaves;
 }
 const KEY = accountKey('u');
-const acct = (store: ReturnType<typeof mem> | typeof bad | null, cloud: CloudSaves) => new SaveManager({ store, cloud, userId: 'u', now });
+const acct = (store: ReturnType<typeof mem> | typeof bad | null, cloud: CloudSaves) => new SaveManager({ store, cloud, userId: 'u' });
 
 describe('khách', () => {
   test('khách: lưu → load → resume', async () => {
     const store = device('dev-A');
-    const m = new SaveManager({ store, cloud: null, userId: null, now });
+    const m = new SaveManager({ store, cloud: null, userId: null });
     expect(m.signedIn).toBe(false);
     expect(m.deviceId).toBe('dev-A');
     expect(await m.save(mk({ gold: 77 }))).toBe('ok');
     expect(readLocal(store, GUEST_KEY)).toMatchObject({ baseRev: 0, dirty: false });
-    const info = await new SaveManager({ store, cloud: null, userId: null, now }).load();
+    const info = await new SaveManager({ store, cloud: null, userId: null }).load();
     expect(info).toMatchObject({ kind: 'resume', save: { runId: 'r1', game: { gold: 77 } } });
     expect(m.offline).toBe(false);
   });
 
   test('khách: inWave → lost, record true, bản lưu bị xóa', async () => {
     const store = device('dev-A');
-    const m = new SaveManager({ store, cloud: null, userId: null, now });
+    const m = new SaveManager({ store, cloud: null, userId: null });
     await m.save(mk({ inWave: true }));
     expect(await m.load()).toMatchObject({ kind: 'lost', record: true, save: { runId: 'r1', inWave: true } });
     expect(store.getItem(GUEST_KEY)).toBeNull();
@@ -117,14 +122,14 @@ describe('khách', () => {
 
   test('khách: bản hỏng → invalid', async () => {
     const store = mem({ [GUEST_KEY]: '{oops' });
-    const m = new SaveManager({ store, cloud: null, userId: null, now });
+    const m = new SaveManager({ store, cloud: null, userId: null });
     expect(await m.load()).toEqual({ kind: 'invalid' });
     expect(await m.load()).toEqual({ kind: 'none' });
   });
 
   test('khách: store bị chặn → save trả unsaved, load trả none', async () => {
     for (const store of [bad, null]) {
-      const m = new SaveManager({ store, cloud: null, userId: null, now });
+      const m = new SaveManager({ store, cloud: null, userId: null });
       expect(typeof m.deviceId).toBe('string');
       expect(await m.save(mk())).toBe('unsaved');
       expect(await m.load()).toEqual({ kind: 'none' });
@@ -134,7 +139,7 @@ describe('khách', () => {
 
   test('khách: end xóa đúng ván', async () => {
     const store = device('dev-A');
-    const m = new SaveManager({ store, cloud: null, userId: null, now });
+    const m = new SaveManager({ store, cloud: null, userId: null });
     await m.save(mk({ runId: 'r1' }));
     await m.end('other');
     expect(readLocal(store, GUEST_KEY)).not.toBeNull();
@@ -143,7 +148,7 @@ describe('khách', () => {
   });
 
   test('userId có nhưng không có cloud → chạy như khách', async () => {
-    const m = new SaveManager({ store: device('dev-A'), cloud: null, userId: 'u', now });
+    const m = new SaveManager({ store: device('dev-A'), cloud: null, userId: 'u' });
     expect(m.signedIn).toBe(false);
     expect(await m.save(mk())).toBe('ok');
     expect(await m.load()).toMatchObject({ kind: 'resume' });
@@ -170,7 +175,7 @@ describe('tài khoản', () => {
   test('tài khoản: local ghi trước khi put trả về', async () => {
     const store = device('dev-A');
     const cloud = fakeCloud({ hang: true });
-    const m = new SaveManager({ store, cloud, userId: 'u', now });
+    const m = new SaveManager({ store, cloud, userId: 'u' });
     void m.save(mk({ inWave: true }));
     expect(readLocal(store, accountKey('u'))).toMatchObject({ save: { inWave: true }, dirty: true });
   });
@@ -489,7 +494,7 @@ describe('tài khoản', () => {
 describe('ván khách khi đăng nhập', () => {
   test('checkGuest: guest inWave → lostGuest và bị xóa', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g', inWave: true }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g', inWave: true }));
     const m = acct(store, fakeCloud());
     expect(m.checkGuest()).toMatchObject({ lostGuest: { runId: 'g' }, guest: null });
     expect(store.getItem(GUEST_KEY)).toBeNull();
@@ -498,14 +503,14 @@ describe('ván khách khi đăng nhập', () => {
 
   test('checkGuest: guest chuẩn bị → guest', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g' }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
     expect(acct(store, fakeCloud()).checkGuest()).toMatchObject({ lostGuest: null, guest: { runId: 'g' } });
     expect(store.getItem(GUEST_KEY)).not.toBeNull();
   });
 
   test('adoptGuest: tài khoản trống → ván khách lên cloud, GUEST_KEY bị xóa', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g', gold: 42 }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g', gold: 42 }));
     const cloud = fakeCloud();
     const m = acct(store, cloud);
     expect(await m.load()).toEqual({ kind: 'none' });
@@ -520,7 +525,7 @@ describe('ván khách khi đăng nhập', () => {
 
   test('adoptGuest: tài khoản đã có dòng → conflict, giữ ván khách, không chặn lưu', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g' }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
     const cloud = fakeCloud();
     await acct(device('dev-B'), cloud).save(mk({ runId: 'acc', deviceId: 'dev-B', inWave: true }));
     t += 11 * 60_000;
@@ -538,7 +543,7 @@ describe('ván khách khi đăng nhập', () => {
 
   test('adoptGuest: offline → pending, load sau đẩy lên', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g' }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
     const cloud = fakeCloud();
     const m = acct(store, cloud);
     await m.load();
@@ -553,7 +558,7 @@ describe('ván khách khi đăng nhập', () => {
 
   test('dropGuest: xóa GUEST_KEY', async () => {
     const store = device('dev-A');
-    await new SaveManager({ store, cloud: null, userId: null, now }).save(mk({ runId: 'g' }));
+    await new SaveManager({ store, cloud: null, userId: null }).save(mk({ runId: 'g' }));
     acct(store, fakeCloud()).dropGuest();
     expect(store.getItem(GUEST_KEY)).toBeNull();
   });

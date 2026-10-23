@@ -8,8 +8,8 @@ export interface CloudRow {
   save: unknown;
   inWave: boolean;
   deviceId: string;
-  /** ms kể từ epoch */
-  updatedAt: number;
+  /** Tuổi của dòng (ms), server tính bằng đồng hồ của nó: không phụ thuộc đồng hồ máy. */
+  ageMs: number;
 }
 
 export type PutResult = { ok: true; rev: number } | { ok: false; error: 'conflict' | 'network' };
@@ -28,6 +28,21 @@ const CONFLICT_CODE = 'PS409';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 
+/** Dòng ps_get_save → CloudRow; rev/age_ms không phải số hữu hạn thì coi như lỗi. */
+export function parseCloudRow(data: Record<string, unknown>): CloudRow | 'error' {
+  const rev = num(data.rev);
+  const ageMs = num(data.age_ms);
+  if (!Number.isFinite(rev) || !Number.isFinite(ageMs)) return 'error';
+  return {
+    runId: String(data.run_id),
+    rev,
+    save: data.save,
+    inWave: Boolean(data.in_wave),
+    deviceId: String(data.device_id),
+    ageMs,
+  };
+}
+
 export function supabaseSaves(): CloudSaves | null {
   const sb = getSupabase();
   if (!sb) return null;
@@ -35,18 +50,11 @@ export function supabaseSaves(): CloudSaves | null {
     async fetch() {
       try {
         const { data, error } = await withTimeout((signal) =>
-          sb.from('ps_saves').select('run_id, rev, save, in_wave, device_id, updated_at').abortSignal(signal).maybeSingle(),
+          sb.rpc('ps_get_save').abortSignal(signal).maybeSingle<Record<string, unknown>>(),
         );
         if (error) return 'error';
         if (!data) return null;
-        return {
-          runId: String(data.run_id),
-          rev: num(data.rev),
-          save: data.save as unknown,
-          inWave: Boolean(data.in_wave),
-          deviceId: String(data.device_id),
-          updatedAt: Date.parse(String(data.updated_at)),
-        };
+        return parseCloudRow(data);
       } catch {
         return 'error';
       }

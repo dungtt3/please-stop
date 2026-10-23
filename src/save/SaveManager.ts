@@ -6,7 +6,7 @@ import {
   type LocalSave,
 } from './localSaves';
 
-/** Bản `inWave` của máy khác mới ghi trong khoảng này → có thể đang được chơi thật ở đó. */
+/** Bản `inWave` của máy khác mới ghi trong khoảng này (tuổi tính trên server) → có thể đang được chơi thật ở đó. */
 export const ELSEWHERE_MS = 600_000;
 
 export type StartInfo =
@@ -28,7 +28,6 @@ export class SaveManager {
   private readonly store: KeyValueStore | null;
   private readonly cloud: CloudSaves | null;
   private readonly userId: string;
-  private readonly now: () => number;
   private _offline = false;
   /** Đã gặp xung đột: ván này thuộc về máy khác, không ghi gì nữa. */
   private stopped = false;
@@ -43,12 +42,11 @@ export class SaveManager {
   /** Các lệnh `end` chưa xong; put đầu tiên của ván mới phải đi sau chúng. */
   private readonly pendingEnds = new Set<Promise<void>>();
 
-  constructor(opts: { store: KeyValueStore | null; cloud: CloudSaves | null; userId: string | null; now?: () => number }) {
+  constructor(opts: { store: KeyValueStore | null; cloud: CloudSaves | null; userId: string | null }) {
     this.store = opts.store;
     this.cloud = opts.cloud;
     this.userId = opts.userId ?? '';
     this.signedIn = opts.userId !== null && opts.cloud !== null;
-    this.now = opts.now ?? Date.now;
     this.deviceId = getDeviceId(opts.store);
   }
 
@@ -201,7 +199,7 @@ export class SaveManager {
     // 4. Bị bỏ giữa wave.
     if (cand.inWave) {
       if (src === 'cloud' && row && row !== 'error') {
-        if (cand.deviceId !== this.deviceId && this.now() - row.updatedAt < ELSEWHERE_MS) return { kind: 'elsewhere', save: cand };
+        if (cand.deviceId !== this.deviceId && row.ageMs < ELSEWHERE_MS) return { kind: 'elsewhere', save: cand };
         const r = await this.cloudEnd(cand.runId);
         this.dropCur();
         if (r === 'error') addEnded(this.store, this.userId, cand.runId);
