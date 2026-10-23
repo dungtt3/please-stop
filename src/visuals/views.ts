@@ -4,11 +4,10 @@ import Phaser from 'phaser';
 import type { ClassId, Enemy, EnemyKind, Minion, Rarity, Unit } from '../sim/types';
 import { COLORS, FONT, RARITY_COLOR } from '../ui/theme';
 import type { VisualRegistry } from './loader';
-import type { ManifestEntry, VisualKey } from './manifest';
+import type { VisualKey } from './manifest';
+import { applyEntry } from './applyEntry';
 import { formatNum, hpFraction, hpValue } from './viewMath';
 
-/** Kích thước ô chuẩn của asset (docs/assets.md): sprite scale 1 vừa một ô 64 px. */
-const REF_TILE = 64;
 export const UNIT_DEPTH = 10;
 export const ENEMY_DEPTH = 12;
 export const MINION_DEPTH = 13;
@@ -24,12 +23,6 @@ const MINION_BAR_COLOR = 0x66bb6a;
 
 const PRIO_ATTACK = 1;
 const PRIO_SKILL = 2;
-
-function applyEntry(s: Phaser.GameObjects.Sprite, e: ManifestEntry | undefined, tile: number): void {
-  s.setScale(((e?.scale ?? 1) * tile) / REF_TILE).setOrigin(e?.originX ?? 0.5, e?.originY ?? 0.5);
-  if (e?.tint !== undefined) s.setTint(e.tint);
-  else s.clearTint();
-}
 
 /**
  * Một sprite với hoạt ảnh nền (idle/walk, có thể không có) và hoạt ảnh chạy một lần (attack/skill/die).

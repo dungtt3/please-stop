@@ -28,6 +28,7 @@ import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 import { BossBar } from '../ui/BossBar';
 import { BoardViews } from '../visuals/BoardViews';
+import { Effects } from '../visuals/effects';
 import { getVisuals } from '../visuals/loader';
 
 const DRAG_THRESHOLD = 8;
@@ -56,6 +57,8 @@ export class GameScene extends Phaser.Scene {
   private ghost!: Phaser.GameObjects.Graphics;
   /** View riêng cho từng nhân vật / quái / lính. */
   private views!: BoardViews;
+  /** Đạn, hiệu ứng trúng đích và skill. */
+  private effects!: Effects;
   private bossBar!: BossBar;
   private topBar!: TopBar;
   private bottomBar!: BottomBar;
@@ -119,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.dyn = this.add.graphics().setDepth(11);
     this.ghost = this.add.graphics().setDepth(30);
     this.views = this.makeViews();
+    this.effects = this.makeEffects();
     this.topBar = new TopBar(
       this,
       () => {
@@ -191,6 +195,7 @@ export class GameScene extends Phaser.Scene {
       this.conflictTimer?.remove(false);
       this.conflictTimer = null;
       this.views.destroy();
+      this.effects.destroy();
     });
 
     if (start.kind === 'new') this.saver.beginNew(this.state);
@@ -221,6 +226,8 @@ export class GameScene extends Phaser.Scene {
     this.hand.reset();
     this.views.destroy();
     this.views = this.makeViews();
+    this.effects.destroy();
+    this.effects = this.makeEffects();
     this.dyn.clear();
     this.ghost.clear();
     this.layout();
@@ -229,6 +236,10 @@ export class GameScene extends Phaser.Scene {
 
   private makeViews(): BoardViews {
     return new BoardViews(this, getVisuals(), (v) => this.toScreen(v), () => this.tileSize);
+  }
+
+  private makeEffects(): Effects {
+    return new Effects(this, getVisuals(), (v) => this.toScreen(v), () => this.tileSize, () => this.state.config.skills.mage.splashRadius);
   }
 
   /** Người chơi luôn dùng cấu hình cloud (hoặc mặc định nếu cloud trống/lỗi). */
@@ -436,6 +447,7 @@ export class GameScene extends Phaser.Scene {
   private handleEvent(e: GameEvent): void {
     switch (e.type) {
       case 'attack':
+        this.effects.onEvent(e);
         sfx.play(e.crit ? 'crit' : 'hit');
         break;
       case 'summon':
@@ -454,13 +466,10 @@ export class GameScene extends Phaser.Scene {
         this.floatText(e.pos, `+${e.gold}`, COLORS.gold, 16);
         sfx.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         break;
-      case 'skill': {
-        const c = this.toScreen(e.pos);
-        const ring = this.add.circle(c.x, c.y, this.tileSize * 0.3, 0xffffff, 0.35).setStrokeStyle(3, 0xfff59d).setDepth(40);
-        this.tweens.add({ targets: ring, scale: 3, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
+      case 'skill':
+        this.effects.onEvent(e);
         sfx.play(`skill.${e.skill}`);
         break;
-      }
       case 'cardGranted':
         this.hand.flash(e.card.id);
         break;
