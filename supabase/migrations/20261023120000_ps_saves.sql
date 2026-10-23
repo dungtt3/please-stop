@@ -87,9 +87,11 @@ $$;
 revoke all on function public.ps_put_save(uuid, bigint, jsonb, boolean, uuid) from public, anon;
 grant execute on function public.ps_put_save(uuid, bigint, jsonb, boolean, uuid) to authenticated;
 
--- Delete the player's save, but only if it still belongs to the run that ended.
--- Returns whether a row was removed.
-create or replace function public.ps_end_save(p_run_id uuid)
+-- Delete the player's save, but only if it still belongs to the run that ended AND either the
+-- calling device wrote it last or nobody wrote past the revision that device knew (p_known_rev).
+-- An end replayed late (device was offline) must not delete newer progress another device made
+-- on the same run. Returns whether a row was removed.
+create or replace function public.ps_end_save(p_run_id uuid, p_device_id uuid, p_known_rev bigint)
 returns boolean
 language plpgsql
 security definer
@@ -101,9 +103,12 @@ begin
   if uid is null then
     raise exception 'not signed in' using errcode = '28000';
   end if;
-  delete from public.ps_saves where user_id = uid and run_id = p_run_id;
+  delete from public.ps_saves
+   where user_id = uid
+     and run_id = p_run_id
+     and (device_id = p_device_id or rev <= p_known_rev);
   return found;
 end;
 $$;
-revoke all on function public.ps_end_save(uuid) from public, anon;
-grant execute on function public.ps_end_save(uuid) to authenticated;
+revoke all on function public.ps_end_save(uuid, uuid, bigint) from public, anon;
+grant execute on function public.ps_end_save(uuid, uuid, bigint) to authenticated;

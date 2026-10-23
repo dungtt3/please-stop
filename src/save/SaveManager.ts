@@ -74,15 +74,19 @@ export class SaveManager {
   }
 
   async end(runId: string): Promise<void> {
-    if (this.cur?.save.runId === runId) this.cur = null;
     const l = readLocal(this.store, this.key);
-    if (l && l !== 'invalid' && l.save.runId === runId) removeLocal(this.store, this.key);
+    const local = l && l !== 'invalid' && l.save.runId === runId ? l : null;
+    const curRev = this.cur?.save.runId === runId ? this.cur.baseRev : 0;
+    if (this.cur?.save.runId === runId) this.cur = null;
+    if (local) removeLocal(this.store, this.key);
     if (!this.signedIn || this.stopped) return;
+    // Rev cloud máy này biết của ván: dòng mà máy khác ghi tiếp sau rev này thì end không xóa.
+    const known = Math.max(curRev, local?.baseRev ?? 0, ...readEnded(this.store, this.userId).filter((e) => e.runId === runId).map((e) => e.rev));
     // Chỉ chờ put đang gửi (nó có thể ghi lại dòng vừa bị xóa); put xếp hàng sau thì chờ ngược lại end này.
     const prior = this.inflight;
     const p = (async () => {
       await prior;
-      if ((await this.cloudEnd(runId)) === 'error') addEnded(this.store, this.userId, runId);
+      if ((await this.cloudEnd(runId, known)) === 'error') addEnded(this.store, this.userId, runId, known);
       else removeEnded(this.store, this.userId, runId);
     })();
     this.pendingEnds.add(p);
@@ -142,9 +146,13 @@ export class SaveManager {
     // 1. Gửi lại các lệnh end còn treo.
     await this.flushEnded();
     // 2. Dòng cloud; dòng của ván đã kết thúc coi như không có.
-    let row: CloudRow | null | 'error' = await this.cloudFetch();
-    this._offline = row === 'error';
-    if (row !== 'error' && row && readEnded(this.store, this.userId).includes(row.runId)) row = null;
+    const fetched = await this.cloudFetch();
+    this._offline = fetched === 'error';
+    // Chỉ bỏ qua dòng mà lệnh end còn treo xóa được (máy này ghi, hoặc chưa ai ghi tiếp sau rev đã biết).
+    const endedRow =
+      fetched !== null && fetched !== 'error' &&
+      readEnded(this.store, this.userId).some((e) => e.runId === fetched.runId && (fetched.deviceId === this.deviceId || fetched.rev <= e.rev));
+    const row: CloudRow | null | 'error' = endedRow ? null : fetched;
     const read = readLocal(this.store, this.key);
     const local = read === 'invalid' ? null : read;
     const none: StartInfo = read === 'invalid' ? { kind: 'invalid' } : { kind: 'none' };
@@ -161,7 +169,7 @@ export class SaveManager {
     } else if (row) {
       const parsed = parseRunSave(row.save);
       if (!parsed) {
-        await this.cloudEnd(row.runId);
+        await this.cloudEnd(row.runId, row.rev);
         removeLocal(this.store, this.key);
         return { kind: 'invalid' };
       }
@@ -200,13 +208,14 @@ export class SaveManager {
     if (cand.inWave) {
       if (src === 'cloud' && row && row !== 'error') {
         if (cand.deviceId !== this.deviceId && row.ageMs < ELSEWHERE_MS) return { kind: 'elsewhere', save: cand };
-        const r = await this.cloudEnd(cand.runId);
+        const r = await this.cloudEnd(cand.runId, row.rev);
         this.dropCur();
-        if (r === 'error') addEnded(this.store, this.userId, cand.runId);
+        if (r === 'error') addEnded(this.store, this.userId, cand.runId, row.rev);
         return { kind: 'lost', save: cand, record: r === true };
       }
+      const known = this.cur?.baseRev ?? 0;
       this.dropCur();
-      addEnded(this.store, this.userId, cand.runId);
+      addEnded(this.store, this.userId, cand.runId, known);
       return { kind: 'lost', save: cand, record: cand.deviceId === this.deviceId };
     }
     // 5.
@@ -253,10 +262,10 @@ export class SaveManager {
   }
 
   private async flushEnded(): Promise<void> {
-    const ids = readEnded(this.store, this.userId);
-    const res = await Promise.all(ids.map((id) => this.cloudEnd(id)));
-    ids.forEach((id, i) => {
-      if (res[i] !== 'error') removeEnded(this.store, this.userId, id);
+    const list = readEnded(this.store, this.userId);
+    const res = await Promise.all(list.map((e) => this.cloudEnd(e.runId, e.rev)));
+    list.forEach((e, i) => {
+      if (res[i] !== 'error') removeEnded(this.store, this.userId, e.runId);
     });
   }
 
@@ -293,9 +302,9 @@ export class SaveManager {
     }
   }
 
-  private async cloudEnd(runId: string): Promise<boolean | 'error'> {
+  private async cloudEnd(runId: string, knownRev: number): Promise<boolean | 'error'> {
     try {
-      return this.cloud ? await this.cloud.end(runId) : 'error';
+      return this.cloud ? await this.cloud.end(runId, this.deviceId, knownRev) : 'error';
     } catch {
       return 'error';
     }

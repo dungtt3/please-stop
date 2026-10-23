@@ -84,11 +84,12 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
       f.row = { runId, rev: f.row.rev + 1, ...data };
       return { ok: true, rev: f.row.rev };
     },
-    async end(runId: string): Promise<boolean | 'error'> {
+    async end(runId: string, deviceId: string, knownRev: number): Promise<boolean | 'error'> {
       f.endCalls.push(runId);
       if (f.endGate) await f.endGate;
       if (f.offline || f.endFails) return 'error';
-      if (f.row?.runId !== runId) return false;
+      // Như ps_end_save: run_id khớp và (máy gọi là máy ghi dòng, hoặc chưa ai ghi tiếp sau knownRev).
+      if (!f.row || f.row.runId !== runId || (f.row.deviceId !== deviceId && f.row.rev > knownRev)) return false;
       f.row = null;
       return true;
     },
@@ -339,7 +340,7 @@ describe('tài khoản', () => {
     t += 11 * 60_000;
     cloud.endFails = true;
     expect(await acct(store, cloud).load()).toMatchObject({ kind: 'lost', record: false });
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 1 }]);
     expect(store.getItem(KEY)).toBeNull();
   });
 
@@ -351,7 +352,7 @@ describe('tài khoản', () => {
     cloud.offline = true;
     await m.end('r1');
     expect(store.getItem(KEY)).toBeNull();
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 1 }]);
     cloud.offline = false;
     expect(await acct(store, cloud).load()).toEqual({ kind: 'none' });
     expect(cloud.endCalls).toEqual(['r1', 'r1']);
@@ -367,8 +368,59 @@ describe('tài khoản', () => {
     cloud.endFails = true;
     await m.end('r1');
     expect(await acct(store, cloud).load()).toEqual({ kind: 'none' });
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 1 }]);
     expect(cloud.row).toMatchObject({ runId: 'r1' });
+  });
+
+  test('tài khoản: máy A end lúc offline, máy B đã chơi tiếp cùng ván → end gửi lại không xóa tiến độ của B', async () => {
+    const storeA = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(storeA, cloud);
+    expect(await a.save(mk({ gold: 1 }))).toBe('ok');
+    cloud.offline = true;
+    await a.end('r1');
+    expect(readEnded(storeA, 'u')).toEqual([{ runId: 'r1', rev: 1 }]);
+    cloud.offline = false;
+    const b = acct(device('dev-B'), cloud);
+    expect(await b.load()).toMatchObject({ kind: 'resume', save: { runId: 'r1' } });
+    expect(await b.save(mk({ deviceId: 'dev-B', gold: 2 }))).toBe('ok');
+    expect(await acct(storeA, cloud).load()).toMatchObject({ kind: 'resume', save: { runId: 'r1', game: { gold: 2 } } });
+    expect(cloud.endCalls).toEqual(['r1', 'r1']);
+    expect(cloud.row).toMatchObject({ runId: 'r1', rev: 2, deviceId: 'dev-B' });
+    expect(readEnded(storeA, 'u')).toEqual([]);
+  });
+
+  test('tài khoản: end vẫn lỗi nhưng máy khác đã ghi tiếp dòng đó → không coi như đã kết thúc', async () => {
+    const storeA = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(storeA, cloud);
+    await a.save(mk({ gold: 1 }));
+    cloud.endFails = true;
+    await a.end('r1');
+    const b = acct(device('dev-B'), cloud);
+    await b.load();
+    expect(await b.save(mk({ deviceId: 'dev-B', gold: 2 }))).toBe('ok');
+    expect(await acct(storeA, cloud).load()).toMatchObject({ kind: 'resume', save: { game: { gold: 2 } } });
+    expect(cloud.row).toMatchObject({ rev: 2 });
+  });
+
+  test('tài khoản: tiếp tục ván máy khác ghi rồi bỏ ván ngay → xóa được dòng của máy kia', async () => {
+    const cloud = fakeCloud();
+    await acct(device('dev-A'), cloud).save(mk({ gold: 1 }));
+    const b = acct(device('dev-B'), cloud);
+    expect(await b.load()).toMatchObject({ kind: 'resume' });
+    await b.end('r1');
+    expect(cloud.row).toBeNull();
+  });
+
+  test('tài khoản: Ván mới khi ván đang chơi ở máy khác (elsewhere) → xóa được dòng inWave của máy kia', async () => {
+    const cloud = fakeCloud();
+    await acct(device('dev-A'), cloud).save(mk({ inWave: true }));
+    t += 60_000;
+    const b = acct(device('dev-B'), cloud);
+    expect(await b.load()).toMatchObject({ kind: 'elsewhere' });
+    await b.end('r1');
+    expect(cloud.row).toBeNull();
   });
 
   test('tài khoản: inWave chỉ có ở local lúc offline → lost, record true; lần sau không tính lại', async () => {
@@ -379,7 +431,7 @@ describe('tài khoản', () => {
     expect(await acct(store, cloud).save(mk({ inWave: true }))).toBe('pending');
     expect(await acct(store, cloud).load()).toMatchObject({ kind: 'lost', record: true, save: { inWave: true } });
     expect(store.getItem(KEY)).toBeNull();
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 0 }]);
     cloud.offline = false;
     expect(await acct(store, cloud).load()).toEqual({ kind: 'none' });
     expect(cloud.row).toBeNull();
@@ -424,7 +476,7 @@ describe('tài khoản', () => {
     await m.save(mk({ runId: 'r1' }));
     cloud.endFails = true;
     await m.end('r1');
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 1 }]);
     cloud.endFails = false;
     expect(await m.save(mk({ runId: 'r2' }))).toBe('ok');
     expect(cloud.row).toMatchObject({ runId: 'r2', rev: 1 });
@@ -487,7 +539,7 @@ describe('tài khoản', () => {
     expect(await m.save(mk())).toBe('pending');
     expect(await acct(store, cloud).load()).toMatchObject({ kind: 'resume' });
     await expect(m.end('r1')).resolves.toBeUndefined();
-    expect(readEnded(store, 'u')).toEqual(['r1']);
+    expect(readEnded(store, 'u')).toEqual([{ runId: 'r1', rev: 0 }]);
   });
 });
 

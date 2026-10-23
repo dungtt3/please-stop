@@ -19,8 +19,11 @@ export interface CloudSaves {
   fetch(): Promise<CloudRow | null | 'error'>;
   /** Ghi có điều kiện theo rev (`baseRev` 0 = chưa có bản nào); rev lệch → `'conflict'`. */
   put(runId: string, baseRev: number, save: RunSave): Promise<PutResult>;
-  /** Xóa bản lưu của ván đã kết thúc; trả có xóa được dòng nào không. */
-  end(runId: string): Promise<boolean | 'error'>;
+  /**
+   * Xóa bản lưu của ván đã kết thúc; trả có xóa được dòng nào không. Chỉ xóa khi dòng do `deviceId`
+   * ghi, hoặc chưa ai ghi tiếp sau `knownRev` (để lệnh end gửi muộn không xóa tiến độ của máy khác).
+   */
+  end(runId: string, deviceId: string, knownRev: number): Promise<boolean | 'error'>;
 }
 
 /** SQLSTATE do ps_put_save ném khi rev/run_id không khớp. */
@@ -79,9 +82,11 @@ export function supabaseSaves(): CloudSaves | null {
         return { ok: false, error: 'network' };
       }
     },
-    async end(runId) {
+    async end(runId, deviceId, knownRev) {
       try {
-        const { data, error } = await withTimeout((signal) => sb.rpc('ps_end_save', { p_run_id: runId }).abortSignal(signal));
+        const { data, error } = await withTimeout((signal) =>
+          sb.rpc('ps_end_save', { p_run_id: runId, p_device_id: deviceId, p_known_rev: knownRev }).abortSignal(signal),
+        );
         return error ? 'error' : data === true;
       } catch {
         return 'error';

@@ -92,34 +92,49 @@ export function removeLocal(store: KeyValueStore | null, key: string): void {
   }
 }
 
-/** Danh sách runId đã kết thúc nhưng chưa báo được lên đám mây. */
-export function readEnded(store: KeyValueStore | null, userId: string): string[] {
+/** Ván đã kết thúc nhưng chưa báo được lên đám mây; `rev` là rev cloud máy này biết lúc kết thúc. */
+export interface EndedRun {
+  runId: string;
+  rev: number;
+}
+
+function isEndedRun(x: unknown): x is EndedRun {
+  if (typeof x !== 'object' || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.runId === 'string' && typeof o.rev === 'number' && Number.isInteger(o.rev) && o.rev >= 0;
+}
+
+/** Danh sách ván đã kết thúc chưa báo được. Mục kiểu cũ (chỉ có runId) bị bỏ qua. */
+export function readEnded(store: KeyValueStore | null, userId: string): EndedRun[] {
   try {
     const raw = store?.getItem(endedKey(userId));
     if (!raw) return [];
     const v: unknown = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    return Array.isArray(v) ? v.filter(isEndedRun).map((e) => ({ runId: e.runId, rev: e.rev })) : [];
   } catch {
     return [];
   }
 }
 
-function writeEnded(store: KeyValueStore | null, userId: string, ids: string[]): void {
+function writeEnded(store: KeyValueStore | null, userId: string, list: EndedRun[]): void {
   try {
     if (!store) return;
-    if (ids.length) store.setItem(endedKey(userId), JSON.stringify(ids));
+    if (list.length) store.setItem(endedKey(userId), JSON.stringify(list));
     else store.removeItem(endedKey(userId));
   } catch {
     /* bỏ qua */
   }
 }
 
-export function addEnded(store: KeyValueStore | null, userId: string, runId: string): void {
-  const ids = readEnded(store, userId);
-  if (!ids.includes(runId)) writeEnded(store, userId, [...ids, runId]);
+/** Thêm ván đã kết thúc; đã có thì giữ rev lớn nhất đã biết. */
+export function addEnded(store: KeyValueStore | null, userId: string, runId: string, rev: number): void {
+  const list = readEnded(store, userId);
+  const cur = list.find((e) => e.runId === runId);
+  if (!cur) writeEnded(store, userId, [...list, { runId, rev }]);
+  else if (rev > cur.rev) writeEnded(store, userId, list.map((e) => (e.runId === runId ? { runId, rev } : e)));
 }
 
 export function removeEnded(store: KeyValueStore | null, userId: string, runId: string): void {
-  const ids = readEnded(store, userId);
-  if (ids.includes(runId)) writeEnded(store, userId, ids.filter((x) => x !== runId));
+  const list = readEnded(store, userId);
+  if (list.some((e) => e.runId === runId)) writeEnded(store, userId, list.filter((e) => e.runId !== runId));
 }

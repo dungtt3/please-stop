@@ -83,7 +83,7 @@ test('store ném lỗi → không ném', () => {
   expect(() => removeLocal(bad, GUEST_KEY)).not.toThrow();
   expect(typeof getDeviceId(bad)).toBe('string');
   expect(readEnded(bad, 'u1')).toEqual([]);
-  expect(() => addEnded(bad, 'u1', 'r')).not.toThrow();
+  expect(() => addEnded(bad, 'u1', 'r', 1)).not.toThrow();
   expect(() => removeEnded(bad, 'u1', 'r')).not.toThrow();
 });
 
@@ -92,24 +92,32 @@ test('store null hoặc lỗi → deviceId vẫn ổn định trong phiên', () 
   expect(getDeviceId(bad)).toBe(getDeviceId(bad));
 });
 
-test('ended thêm/bớt không trùng', () => {
+test('ended thêm/bớt không trùng, nhớ rev đã biết (lớn nhất)', () => {
   const m = mem();
   expect(readEnded(m, 'u1')).toEqual([]);
-  addEnded(m, 'u1', 'a');
-  addEnded(m, 'u1', 'a');
-  addEnded(m, 'u1', 'b');
-  expect(readEnded(m, 'u1')).toEqual(['a', 'b']);
+  addEnded(m, 'u1', 'a', 2);
+  addEnded(m, 'u1', 'a', 2);
+  addEnded(m, 'u1', 'b', 0);
+  expect(readEnded(m, 'u1')).toEqual([{ runId: 'a', rev: 2 }, { runId: 'b', rev: 0 }]);
   expect(readEnded(m, 'u2')).toEqual([]);
+  addEnded(m, 'u1', 'a', 5);
+  addEnded(m, 'u1', 'a', 3);
+  expect(readEnded(m, 'u1')).toEqual([{ runId: 'a', rev: 5 }, { runId: 'b', rev: 0 }]);
   removeEnded(m, 'u1', 'a');
-  expect(readEnded(m, 'u1')).toEqual(['b']);
+  expect(readEnded(m, 'u1')).toEqual([{ runId: 'b', rev: 0 }]);
   removeEnded(m, 'u1', 'b');
   expect(readEnded(m, 'u1')).toEqual([]);
 });
 
-test('ended hỏng → rỗng', () => {
+test('ended hỏng → rỗng; mục kiểu cũ (chuỗi) hoặc sai dạng bị bỏ qua', () => {
   expect(readEnded(mem({ [endedKey('u1')]: '{oops' }), 'u1')).toEqual([]);
   expect(readEnded(mem({ [endedKey('u1')]: '{"a":1}' }), 'u1')).toEqual([]);
-  expect(readEnded(mem({ [endedKey('u1')]: '["a",5,"b"]' }), 'u1')).toEqual(['a', 'b']);
+  expect(readEnded(mem({ [endedKey('u1')]: '["a",5,"b"]' }), 'u1')).toEqual([]);
+  const mixed = JSON.stringify(['old', { runId: 'a', rev: 1 }, { runId: 'b' }, { runId: 'c', rev: -1 }, { runId: 'd', rev: 1.5 }, { runId: 5, rev: 1 }, null]);
+  expect(readEnded(mem({ [endedKey('u1')]: mixed }), 'u1')).toEqual([{ runId: 'a', rev: 1 }]);
+  const m = mem({ [endedKey('u1')]: '["old"]' });
+  addEnded(m, 'u1', 'x', 4);
+  expect(readEnded(m, 'u1')).toEqual([{ runId: 'x', rev: 4 }]);
 });
 
 describe('uuid', () => {
