@@ -98,7 +98,8 @@ export class SaveManager {
     if (local) removeLocal(this.store, this.key);
     if (!this.signedIn || this.stopped) return;
     // Rev cloud máy này biết của ván: dòng mà máy khác ghi tiếp sau rev này thì end không xóa.
-    const known = Math.max(curRev, local?.baseRev ?? 0, ...readEnded(this.store, this.userId).filter((e) => e.runId === runId).map((e) => e.rev));
+    const endedRevs = readEnded(this.store, this.userId).filter((e) => e.runId === runId).map((e) => e.rev);
+    const known = Math.max(curRev, local?.baseRev ?? 0, ...endedRevs);
     // Chỉ chờ put đang gửi (nó có thể ghi lại dòng vừa bị xóa); put xếp hàng sau thì chờ ngược lại end này.
     const prior = this.inflight;
     const p = (async () => {
