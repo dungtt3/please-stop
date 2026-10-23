@@ -5,6 +5,8 @@ import type Phaser from 'phaser';
 import { parseManifest, type ManifestEntry, type VisualKey } from './manifest';
 
 export const ASSET_LOAD_TIMEOUT_MS = 8000;
+/** manifest.json có hạn riêng (ngắn hơn): kết nối treo thì không bắt người chơi đợi cả 8 s khi chưa biết có sprite nào. */
+export const MANIFEST_TIMEOUT_MS = 2000;
 
 export interface VisualRegistry {
   has(key: VisualKey): boolean;
@@ -80,7 +82,12 @@ const PREFIX = '[sprites]';
  * Đọc manifest ở `baseUrl + 'manifest.json'` rồi tải từng khóa. Không bao giờ ném lỗi.
  * Quá `timeoutMs`: trả về các khóa đã xong; khóa chưa xong bị bỏ (một cảnh báo), kể cả khi tải xong sau đó.
  */
-export async function createVisuals(io: VisualIO, baseUrl: string, timeoutMs: number): Promise<VisualRegistry> {
+export async function createVisuals(
+  io: VisualIO,
+  baseUrl: string,
+  timeoutMs: number,
+  manifestTimeoutMs: number = MANIFEST_TIMEOUT_MS,
+): Promise<VisualRegistry> {
   const loaded = new Map<VisualKey, Loaded>();
   const pending = new Set<VisualKey>();
   let sealed = false;
@@ -88,12 +95,20 @@ export async function createVisuals(io: VisualIO, baseUrl: string, timeoutMs: nu
 
   const work = async (): Promise<void> => {
     let raw: unknown;
+    let manifestTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      raw = await io.fetchJson(baseUrl + 'manifest.json');
+      const limit = Math.min(manifestTimeoutMs, timeoutMs);
+      raw = await Promise.race([
+        io.fetchJson(baseUrl + 'manifest.json'),
+        new Promise<never>((_, reject) => {
+          manifestTimer = setTimeout(() => reject(new Error(`quá ${limit / 1000}s`)), limit);
+        }),
+      ]);
     } catch (e) {
       if (!sealed) io.warn(`${PREFIX} không đọc được manifest.json (${errMsg(e)}); dùng hình khối`);
       return;
     } finally {
+      clearTimeout(manifestTimer);
       manifestRead = true;
     }
     if (sealed) return;

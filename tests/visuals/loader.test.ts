@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { atlasFrames, createVisuals, sheetFrames, type TextureSource, type VisualIO } from '../../src/visuals/loader';
+import { MANIFEST_TIMEOUT_MS, atlasFrames, createVisuals, sheetFrames, type TextureSource, type VisualIO } from '../../src/visuals/loader';
 
 describe('sheetFrames', () => {
   test('bỏ trống frames → mọi khung', () => {
@@ -226,6 +226,42 @@ describe('createVisuals', () => {
     expect(r.has('minion.idle')).toBe(false);
     expect(io.warnings).toHaveLength(1);
     expect(io.warnings[0]).toContain('manifest.json');
+  });
+
+  test('manifest treo → registry rỗng sau MANIFEST_TIMEOUT_MS (2 s), không đợi hết 8 s', async () => {
+    vi.useFakeTimers();
+    expect(MANIFEST_TIMEOUT_MS).toBe(2000);
+    const io = fakeIO({}, { hang: [B + 'manifest.json'] });
+    let settled = false;
+    const p = createVisuals(io, B, 8000).then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const r = await p;
+    expect(settled).toBe(true);
+    expect(r.has('minion.idle')).toBe(false);
+    expect(io.warnings).toHaveLength(1);
+    expect(io.warnings[0]).toContain('manifest.json');
+  });
+
+  test('manifest xong trước 2 s nhưng ảnh chậm: vẫn được chờ tới hạn chung, không bị cắt ở 2 s', async () => {
+    vi.useFakeTimers();
+    const io = fakeIO({
+      [B + 'manifest.json']: { 'minion.idle': { type: 'sheet', file: 'a.png', frameWidth: 64, frameHeight: 64 } },
+    }, { hang: [B + 'a.png'] });
+    let settled = false;
+    const p = createVisuals(io, B, 8000).then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS + 1000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(8000);
+    await p;
+    expect(settled).toBe(true);
   });
 
   test('IO ném lỗi bất ngờ → không ném ra ngoài', async () => {
