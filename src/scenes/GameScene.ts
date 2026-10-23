@@ -28,6 +28,7 @@ import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
 import { runRestart } from './restartFlow';
 import { isEditableTarget, keyAction } from '../ui/keys';
+import { getOrientation, onOrientation, soundSuspended } from '../ui/orientation';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { boardTile, topBarOwns } from '../ui/layout';
 import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, TOP_BAR_H, textStyle } from '../ui/theme';
@@ -82,6 +83,8 @@ export class GameScene extends Phaser.Scene {
   private readonly shakeGate = new ShakeGate(() => this.time.now);
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
+  /** Lớp phủ "Xoay ngang" đang che màn hình: ván đứng yên (kể cả đồng hồ quiz), độc lập với `menuOpen`. */
+  private orientationBlocked = false;
   /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
   private shield = new PointerShield();
   private runRecorded = false;
@@ -112,6 +115,7 @@ export class GameScene extends Phaser.Scene {
     // Scene được dùng lại giữa các lần vào ván: xóa trạng thái cũ (đối tượng hiển thị đã bị hủy).
     this.staticTexts = [];
     this.menuOpen = false;
+    this.orientationBlocked = false;
     this.shield = new PointerShield();
     this.halted = false;
     this.speed = 1;
@@ -169,8 +173,8 @@ export class GameScene extends Phaser.Scene {
       onToggle: (open) => {
         this.menuOpen = open;
         this.shield.arm();
-        sfx.setSuspended(open);
-        if (open) this.drag = null;
+        this.syncSound();
+        if (open) this.cancelInput();
       },
       phase: () => this.state.phase,
       saveAndLeave: async () => {
@@ -200,7 +204,7 @@ export class GameScene extends Phaser.Scene {
       const act = keyAction(e.key, {
         popupOpen: this.pauseMenu.open,
         confirmOpen: this.pauseMenu.confirming,
-        blocked: this.resultScreen.open || this.quizModal.open || this.halted,
+        blocked: this.resultScreen.open || this.quizModal.open || this.halted || this.orientationBlocked,
         targetEditable: isEditableTarget(e.target),
         modifier: e.ctrlKey || e.altKey || e.metaKey,
         repeat: e.repeat,
@@ -223,16 +227,20 @@ export class GameScene extends Phaser.Scene {
     const onVisibility = (): void => {
       if (document.visibilityState === 'hidden') {
         this.saver.flushPrep(this.state);
-        sfx.setSuspended(true);
-      } else {
-        sfx.setSuspended(this.menuOpen);
       }
+      this.syncSound();
     };
     document.addEventListener('visibilitychange', onVisibility);
+
+    // Lớp phủ xoay ngang: dừng ván khi dọc; xoay lại thì mở popup nếu mở được, không thì chỉ bỏ cờ.
+    const orient = getOrientation();
+    const offOrient = orient.onChange((blocked) => this.applyOrientation(blocked));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offOrient();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('keydown', onKey);
       this.menuOpen = false;
+      this.orientationBlocked = false;
       sfx.setSuspended(document.visibilityState === 'hidden');
       this.saver.stop();
       this.conflictTimer?.remove(false);
@@ -244,6 +252,40 @@ export class GameScene extends Phaser.Scene {
     if (start.kind === 'new') this.saver.beginNew(this.state);
     else if (start.kind === 'resume') this.saver.resume(start.save);
     else this.saver.markLost(start.save);
+
+    // Vào ván khi màn hình đang dọc: đứng yên ngay (không tự mở popup).
+    if (orient.blocked()) this.applyOrientation(true);
+  }
+
+  /** Áp chuyển trạng thái hướng màn hình (logic thuần ở `onOrientation`). */
+  private applyOrientation(blocked: boolean): void {
+    const a = onOrientation(blocked, {
+      popupOpen: this.pauseMenu.open,
+      quizOpen: this.quizModal.open,
+      resultOpen: this.resultScreen.open,
+      halted: this.halted,
+    });
+    this.orientationBlocked = a.blocked;
+    if (a.cancelInput) this.cancelInput();
+    this.syncSound();
+    if (a.openPopup) this.openMenu();
+  }
+
+  /** Hủy kéo thả bàn chơi và nhấn/kéo thẻ bài đang dở (tạm dừng không được để chúng sống tiếp). */
+  private cancelInput(): void {
+    this.drag = null;
+    this.hand.cancelPress();
+  }
+
+  /** Âm thanh chỉ chạy khi không có popup, không bị lớp phủ xoay và tab đang hiện. */
+  private syncSound(): void {
+    sfx.setSuspended(
+      soundSuspended({
+        popupOpen: this.menuOpen,
+        orientationBlocked: this.orientationBlocked,
+        hidden: document.visibilityState === 'hidden',
+      }),
+    );
   }
 
   private onSaveConflict(): void {
@@ -297,7 +339,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Nút ⚙: mở popup tạm dừng (không mở khi đang có màn kết quả, quiz hoặc ván bị đóng băng). */
   private openMenu(): void {
-    if (this.resultScreen.open || this.quizModal.open || this.halted) return;
+    if (this.resultScreen.open || this.quizModal.open || this.halted || this.orientationBlocked) return;
     this.pauseMenu.show();
   }
 
@@ -370,7 +412,7 @@ export class GameScene extends Phaser.Scene {
    */
   private uiOwns(p: Phaser.Input.Pointer): boolean {
     return (
-      this.menuOpen || topBarOwns(p.x, p.y) || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
+      this.menuOpen || this.orientationBlocked || topBarOwns(p.x, p.y) || p.y >= GAME_H - BOTTOM_H || this.unitPanel.contains(p.x, p.y) ||
       this.quizModal.open || this.resultScreen.open || this.hand.busy
     );
   }
@@ -414,7 +456,7 @@ export class GameScene extends Phaser.Scene {
   update(_: number, delta: number): void {
     this.shield.reset();
     const s = this.state;
-    if (!this.menuOpen && !this.halted) {
+    if (!this.menuOpen && !this.halted && !this.orientationBlocked) {
       const dt = Math.min(delta / 1000, 0.25) * this.speed;
       const live = s.phase !== 'won' && s.phase !== 'lost';
       tick(s, dt);
@@ -427,7 +469,7 @@ export class GameScene extends Phaser.Scene {
         sfx.play(s.phase === 'won' ? 'win' : 'lose');
       }
     }
-    this.saver.tick(s, delta, this.menuOpen || this.halted);
+    this.saver.tick(s, delta, this.menuOpen || this.halted || this.orientationBlocked);
     // Trước khi sync view: quái vừa chết còn view để chạy hoạt ảnh chết.
     for (const e of s.events) this.views.onEvent(e);
     this.render();

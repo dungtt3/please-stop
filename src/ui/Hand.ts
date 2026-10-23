@@ -117,8 +117,8 @@ export class Hand {
     }
   }
 
-  /** Thả ngoài canvas: kết thúc nhấn/kéo, không thả vào đâu. */
-  private cancelPress(): void {
+  /** Kết thúc nhấn/kéo đang dở, không thả vào đâu (thả ngoài canvas, tạm dừng, lớp phủ xoay). */
+  cancelPress(): void {
     this.press = null;
     this.clearGhost();
   }
