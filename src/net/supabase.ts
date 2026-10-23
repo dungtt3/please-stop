@@ -8,7 +8,14 @@ export function getSupabase(): SupabaseClient | null {
   try {
     const url = import.meta.env.VITE_SUPABASE_URL;
     const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    client = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
+    // Phiên đăng nhập gắn vào chính client này nên các RPC ps_* chạy với role `authenticated`.
+    // Nếu localStorage bị chặn, supabase-js tự dùng bộ nhớ tạm (đăng nhập chỉ sống trong phiên).
+    client =
+      url && key
+        ? createClient(url, key, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce', storageKey: 'ps.auth' },
+          })
+        : null;
   } catch {
     client = null;
   }
