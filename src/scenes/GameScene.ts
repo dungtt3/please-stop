@@ -23,6 +23,7 @@ import { configHash } from '../settings/configHash';
 import { recordRun, TIMEOUT_MS } from '../net/cloud';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
+import { PointerShield } from './PointerShield';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { BOTTOM_H, COLORS, FONT, GAME_H, GAME_W, MAX_TILE, RARITY_COLOR, TOP_BAR_H } from '../ui/theme';
 
@@ -59,6 +60,8 @@ export class GameScene extends Phaser.Scene {
   private starTexts = new Map<number, Phaser.GameObjects.Text>();
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
+  /** Lần chạm vừa đóng/mở popup không được lọt xuống bàn chơi. */
+  private shield = new PointerShield();
   private runRecorded = false;
   /** Đã phát tiếng thắng/thua của ván này (chỉ một lần). */
   private endSounded = false;
@@ -86,6 +89,7 @@ export class GameScene extends Phaser.Scene {
     this.starTexts = new Map();
     this.staticTexts = [];
     this.menuOpen = false;
+    this.shield = new PointerShield();
     this.halted = false;
     this.speed = 1;
     this.selectedUnitId = null;
@@ -136,6 +140,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseMenu = new PauseMenu(this, {
       onToggle: (open) => {
         this.menuOpen = open;
+        this.shield.arm();
         sfx.setSuspended(open);
         if (open) this.drag = null;
       },
@@ -292,6 +297,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onDown(p: Phaser.Input.Pointer): void {
+    if (this.shield.consume()) return;
     if (this.uiOwns(p)) return;
     const slot = this.slotAt(p.x, p.y);
     if (this.hand.selectedId !== null && slot >= 0 && this.state.slots[slot] !== null) {
@@ -327,6 +333,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_: number, delta: number): void {
+    this.shield.reset();
     const s = this.state;
     if (!this.menuOpen && !this.halted) {
       const dt = Math.min(delta / 1000, 0.25) * this.speed;
