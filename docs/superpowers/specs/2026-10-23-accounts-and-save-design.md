@@ -150,8 +150,15 @@ Nút "Chơi lại" ở màn kết quả giữ như cũ (vào ván mới luôn). 
       chưa có dòng → chèn với `rev = 1` (chỉ khi `p_base_rev = 0`); có dòng cùng
       `run_id` và `rev = p_base_rev` → cập nhật, `rev = rev + 1`; còn lại → báo lỗi
       xung đột (errcode riêng). Trả về `rev` mới.
-    - `ps_end_save(p_run_id) returns boolean`: xóa dòng nếu `run_id` khớp, trả về
-      có xóa được hay không.
+    - `ps_end_save(p_run_id, p_device_id, p_known_rev) returns boolean`: xóa dòng
+      nếu `run_id` khớp **và** (`device_id = p_device_id` hoặc `rev <= p_known_rev`),
+      trả về có xóa được hay không. Nhờ vậy một lệnh kết thúc gửi muộn (máy offline)
+      không xóa được tiến độ mới hơn mà máy khác đã chơi tiếp. `ps.ended` lưu
+      `{ runId, rev }`.
+    - `ps_get_save()`: đọc dòng của người chơi kèm `age_ms` tính bằng đồng hồ server
+      (dùng cho luật "đang chơi ở thiết bị khác < 10 phút"), chưa đăng nhập → lỗi
+      `28000`.
+    *(Hai điểm trên được thêm sau lượt rà soát toàn nhánh.)*
   - Vì mỗi ván có `run_id` riêng, `rev` bắt đầu lại từ 1 cho ván mới cũng không gây
     nhầm: máy cũ ghi với `run_id` cũ sẽ bị từ chối.
 - **Bản sao cục bộ** khóa `ps.save.<user_id>`: `{ save, runId, baseRev, dirty }`
