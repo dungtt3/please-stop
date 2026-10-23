@@ -47,7 +47,7 @@ export function damageEnemy(state: GameState, enemy: Enemy, amount: number, crit
     state.kills++;
     const gold = Math.round(enemy.goldDrop) /* goldDropMult đã áp ở spawnEnemy */;
     state.gold += gold;
-    state.events.push({ type: 'kill', pos, gold });
+    state.events.push({ type: 'kill', pos, gold, enemyId: enemy.id, kind: enemy.kind });
     if (enemy.kind === 'boss') grantCard(state, 'rare');
   }
   return taken;

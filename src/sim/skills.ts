@@ -17,6 +17,16 @@ function hit(state: GameState, stats: UnitStats, enemy: Enemy, mult: number): vo
   damageEnemy(state, enemy, h.amount, h.crit);
 }
 
+/** Đòn thường: phát event attack (crit lấy từ chính lần rollHit) rồi gây sát thương. */
+function attackHit(state: GameState, unit: Unit, stats: UnitStats, enemy: Enemy, mult: number): void {
+  const h = rollHit(state.rng, stats, mult);
+  state.events.push({
+    type: 'attack', source: 'unit', id: unit.id, classId: unit.classId,
+    from: unitPos(state, unit), to: enemyPos(state, enemy), crit: h.crit,
+  });
+  damageEnemy(state, enemy, h.amount, h.crit);
+}
+
 const dist = (a: Vec, b: Vec): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** Đòn thường theo lớp. */
@@ -26,12 +36,16 @@ export function basicAttack(state: GameState, unit: Unit, stats: UnitStats, targ
     case 'swordsman': {
       unit.attackCount++;
       const combo = unit.attackCount % cfg.swordsman.comboEvery === 0;
-      hit(state, stats, target, combo ? cfg.swordsman.comboMult : 1);
+      attackHit(state, unit, stats, target, combo ? cfg.swordsman.comboMult : 1);
       return;
     }
     case 'mage': {
       const m = cfg.mage;
       const h = rollHit(state.rng, stats, 1);
+      state.events.push({
+        type: 'attack', source: 'unit', id: unit.id, classId: 'mage',
+        from: unitPos(state, unit), to: enemyPos(state, target), crit: h.crit,
+      });
       const centre = enemyPos(state, target);
       for (const e of enemiesInRange(state, centre, m.splashRadius)) {
         damageEnemy(state, e, h.amount, h.crit);
@@ -40,7 +54,7 @@ export function basicAttack(state: GameState, unit: Unit, stats: UnitStats, targ
       return;
     }
     default:
-      hit(state, stats, target, 1);
+      attackHit(state, unit, stats, target, 1);
   }
 }
 
@@ -58,21 +72,25 @@ export function updateActive(state: GameState, unit: Unit, stats: UnitStats, dt:
   unit.skillCooldown = 0;
   const pos = unitPos(state, unit);
   const cfg = state.config;
-  let at: Vec;
+  let extra: { range?: number; hits?: Vec[]; center?: Vec; radius?: number; spawns?: Vec[] };
   switch (unit.classId) {
     case 'swordsman': {
       const targets = enemiesInRange(state, pos, stats.range);
       if (targets.length === 0) return;
       for (const e of targets) hit(state, stats, e, cfg.skills.swordsman.whirlMult);
-      at = pos;
+      extra = { range: stats.range };
       break;
     }
     case 'archer': {
       const targets = enemiesInRange(state, pos, stats.range);
       if (targets.length === 0) return;
       state.rng.shuffle(targets);
-      for (const e of targets.slice(0, cfg.skills.archer.rainArrows)) hit(state, stats, e, cfg.skills.archer.rainMult);
-      at = pos;
+      const hits: Vec[] = [];
+      for (const e of targets.slice(0, cfg.skills.archer.rainArrows)) {
+        hits.push(enemyPos(state, e));
+        hit(state, stats, e, cfg.skills.archer.rainMult);
+      }
+      extra = { hits };
       break;
     }
     case 'mage': {
@@ -88,16 +106,19 @@ export function updateActive(state: GameState, unit: Unit, stats: UnitStats, dt:
         if (n > bestCount) { bestCount = n; best = p; }
       }
       for (const e of enemiesInRange(state, best, m.meteorRadius)) hit(state, stats, e, m.meteorMult);
-      at = best;
+      extra = { center: best, radius: m.meteorRadius };
       break;
     }
     default: {
-      let spawned = 0;
-      for (let i = 0; i < cfg.skills.summoner.waveCount; i++) if (spawnMinion(state, unit, stats)) spawned++;
-      if (spawned === 0) return;
-      at = pos;
+      const spawns: Vec[] = [];
+      for (let i = 0; i < cfg.skills.summoner.waveCount; i++) {
+        const p = spawnMinion(state, unit, stats);
+        if (p) spawns.push(p);
+      }
+      if (spawns.length === 0) return;
+      extra = { spawns };
     }
   }
-  state.events.push({ type: 'skill', unitId: unit.id, skill: unit.classId, pos: at });
+  state.events.push({ type: 'skill', unitId: unit.id, skill: unit.classId, pos, ...extra });
   unit.skillCooldown = activeCooldown(cfg, unit.classId, unit.level);
 }

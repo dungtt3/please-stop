@@ -88,9 +88,28 @@ export interface QuizState {
 
 export type GameEvent =
   | { type: 'damage'; pos: Vec; amount: number; crit: boolean }
-  | { type: 'kill'; pos: Vec; gold: number }
+  | { type: 'kill'; pos: Vec; gold: number; enemyId: number; kind: EnemyKind }
   | { type: 'leak'; amount: number }
-  | { type: 'skill'; unitId: number; skill: string; pos: Vec }
+  | { type: 'attack'; source: 'unit' | 'minion'; id: number; classId: ClassId | 'minion'; from: Vec; to: Vec; crit: boolean }
+  | { type: 'summon'; unitId: number }
+  | { type: 'merge'; unitId: number }
+  | { type: 'quiz'; result: 'correct' | 'wrong' | 'timeout' }
+  | {
+      type: 'skill';
+      unitId: number;
+      skill: ClassId;
+      /** vị trí nhân vật */
+      pos: Vec;
+      /** swordsman: tầm vòng chém */
+      range?: number;
+      /** archer: các điểm trúng */
+      hits?: Vec[];
+      /** mage: tâm + bán kính thiên thạch */
+      center?: Vec;
+      radius?: number;
+      /** summoner: chỗ lính xuất hiện */
+      spawns?: Vec[];
+    }
   | { type: 'cardGranted'; card: Card }
   | { type: 'cardConverted'; gold: number }
   | { type: 'waveStart'; wave: number }

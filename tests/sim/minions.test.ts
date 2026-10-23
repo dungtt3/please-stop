@@ -20,7 +20,7 @@ function setup(slot = 0, id = 100): { s: GameState; u: Unit } {
 test('lính sinh ra ở ô đường gần nhất trong tầm', () => {
   const { s, u } = setup();
   const stats = computeStats(cfg, u);
-  expect(spawnMinion(s, u, stats)).toBe(true);
+  expect(spawnMinion(s, u, stats)).not.toBeNull();
   const m = s.minions[0];
   // slot 0 tâm (3.5, 2.5): ô đường gần nhất là (3,1) tâm (3.5,1.5)
   expect(m.pos).toEqual({ x: 3.5, y: 1.5 });
@@ -65,8 +65,8 @@ test('boss đi xuyên và giẫm chết lính', () => {
 test('tối đa 4 lính mỗi Triệu hồi sư', () => {
   const { s, u } = setup();
   const stats = computeStats(cfg, u);
-  for (let i = 0; i < 4; i++) expect(spawnMinion(s, u, stats)).toBe(true);
-  expect(spawnMinion(s, u, stats)).toBe(false);
+  for (let i = 0; i < 4; i++) expect(spawnMinion(s, u, stats)).not.toBeNull();
+  expect(spawnMinion(s, u, stats)).toBeNull();
   expect(s.minions).toHaveLength(4);
 });
 
