@@ -6,6 +6,8 @@ export const MOTION_KEY = 'ps.motion';
 export const REDUCED_FX_MAX_MS = 200;
 /** Khoảng cách tối thiểu giữa hai lần rung màn hình (ms). */
 export const SHAKE_MIN_GAP_MS = 300;
+/** Khoảng cách tối thiểu giữa hai lần báo quái lọt khi giảm chuyển động (ms): < 3 lần/giây. */
+export const LEAK_CUE_MIN_GAP_MS = 334;
 
 /** Thời lượng hiệu ứng: giữ nguyên khi không giảm; khi giảm thì cắt ở `cap` (mặc định 200 ms). */
 export function fxDuration(baseMs: number, reduced: boolean, cap: number = REDUCED_FX_MAX_MS): number {
@@ -56,26 +58,49 @@ export class MotionSettings {
   }
 }
 
-function systemPrefersReduced(): boolean {
-  try {
-    return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
+interface MediaHost {
+  matchMedia?: (query: string) => { matches: boolean };
 }
+
+/**
+ * Đọc `prefers-reduced-motion` của máy. `MediaQueryList` chỉ tạo một lần (lười, bọc try/catch), sau đó đọc
+ * `.matches` mỗi lần dùng nên thay đổi cài đặt hệ điều hành giữa phiên vẫn có hiệu lực.
+ */
+export function createMediaReduced(getHost: () => MediaHost | undefined): () => boolean {
+  let mql: { matches: boolean } | null = null;
+  let failed = false;
+  return () => {
+    if (failed) return false;
+    try {
+      if (!mql) {
+        const host = getHost();
+        if (!host || typeof host.matchMedia !== 'function') {
+          failed = true;
+          return false;
+        }
+        mql = host.matchMedia('(prefers-reduced-motion: reduce)');
+      }
+      return mql.matches === true;
+    } catch {
+      failed = true;
+      return false;
+    }
+  };
+}
+
+const systemPrefersReduced = createMediaReduced(() => (typeof window === 'undefined' ? undefined : window));
 
 export const motion = new MotionSettings(browserStore(), systemPrefersReduced);
 
-/** Cho rung khi cách lần rung trước ≥ 300 ms (đồng hồ lùi → coi là lần đầu). */
+/** Cho phép khi cách lần trước ≥ `minGapMs` (mặc định 300 ms, dùng cho rung; đồng hồ lùi → coi là lần đầu). */
 export class ShakeGate {
   private last: number | null = null;
 
-  constructor(private readonly now: () => number) {}
+  constructor(private readonly now: () => number, private readonly minGapMs: number = SHAKE_MIN_GAP_MS) {}
 
   allow(): boolean {
     const t = this.now();
-    if (this.last !== null && t >= this.last && t - this.last < SHAKE_MIN_GAP_MS) return false;
+    if (this.last !== null && t >= this.last && t - this.last < this.minGapMs) return false;
     this.last = t;
     return true;
   }

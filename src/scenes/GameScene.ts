@@ -18,7 +18,7 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { sfx } from '../audio/sfx';
 import { Banner, Toast } from '../ui/Toast';
 import { browserStore } from '../settings/configStore';
-import { motion, REDUCED_FX_MAX_MS, ShakeGate } from '../settings/motion';
+import { LEAK_CUE_MIN_GAP_MS, motion, REDUCED_FX_MAX_MS, ShakeGate } from '../settings/motion';
 import { resolveConfig } from '../settings/resolveConfig';
 import { configHash } from '../settings/configHash';
 import { recordRun, TIMEOUT_MS } from '../net/cloud';
@@ -81,6 +81,11 @@ export class GameScene extends Phaser.Scene {
   private banner!: Banner;
   /** Chống rung màn hình dồn dập (≥ 300 ms giữa hai lần). */
   private readonly shakeGate = new ShakeGate(() => this.time.now);
+  /** Giảm chuyển động: viền đỏ + nhấp máu khi quái lọt tối đa < 3 lần/giây (chống nhấp nháy). */
+  private readonly leakCueGate = new ShakeGate(() => this.time.now, LEAK_CUE_MIN_GAP_MS);
+  /** Một viền duy nhất dùng lại cho mọi lần báo lọt (khởi động lại hiệu ứng mờ, không chồng viền). */
+  private leakEdge: Phaser.GameObjects.Rectangle | null = null;
+  private leakEdgeTween: Phaser.Tweens.Tween | null = null;
   private staticTexts: Phaser.GameObjects.Text[] = [];
   private menuOpen = false;
   /** Lớp phủ "Xoay ngang" đang che màn hình: ván đứng yên (kể cả đồng hồ quiz), độc lập với `menuOpen`. */
@@ -114,6 +119,8 @@ export class GameScene extends Phaser.Scene {
     });
     // Scene được dùng lại giữa các lần vào ván: xóa trạng thái cũ (đối tượng hiển thị đã bị hủy).
     this.staticTexts = [];
+    this.leakEdge = null;
+    this.leakEdgeTween = null;
     this.menuOpen = false;
     this.orientationBlocked = false;
     this.shield = new PointerShield();
@@ -543,10 +550,15 @@ export class GameScene extends Phaser.Scene {
   private leakCue(): void {
     const m = this.state.map;
     const tl = this.toScreen({ x: 0, y: 0 });
-    const edge = this.add
-      .rectangle(tl.x, tl.y, m.cols * this.tileSize, m.rows * this.tileSize)
-      .setOrigin(0).setDepth(55).setStrokeStyle(6, LEAK_CUE_COLOR, LEAK_CUE_ALPHA);
-    this.tweens.add({ targets: edge, alpha: 0, duration: REDUCED_FX_MAX_MS, onComplete: () => edge.destroy() });
+    this.leakEdgeTween?.stop();
+    this.leakEdge ??= this.add.rectangle(0, 0, 1, 1).setOrigin(0).setDepth(55);
+    this.leakEdge
+      .setPosition(tl.x, tl.y).setSize(m.cols * this.tileSize, m.rows * this.tileSize)
+      .setStrokeStyle(6, LEAK_CUE_COLOR, LEAK_CUE_ALPHA).setAlpha(1).setVisible(true);
+    this.leakEdgeTween = this.tweens.add({
+      targets: this.leakEdge, alpha: 0, duration: REDUCED_FX_MAX_MS,
+      onComplete: () => this.leakEdge?.setVisible(false),
+    });
   }
 
   private handleEvent(e: GameEvent): void {
@@ -596,10 +608,11 @@ ${m}` : `Wave ${e.wave}`);
         break;
       case 'leak':
         if (motion.reduced) {
-          this.leakCue();
-          this.topBar.pulseHp();
-        }
-        else if (this.shakeGate.allow()) this.cameras.main.shake(150, 0.002);
+          if (this.leakCueGate.allow()) {
+            this.leakCue();
+            this.topBar.pulseHp();
+          }
+        } else if (this.shakeGate.allow()) this.cameras.main.shake(150, 0.002);
         sfx.play('leak');
         break;
       default:
