@@ -21,6 +21,12 @@ export interface GuestCheck {
   guest: RunSave | null;
 }
 
+/**
+ * Các lệnh `end` chưa xong theo người dùng ('guest' cho khách), dùng chung cho mọi SaveManager:
+ * về Màn hình chính tạo manager mới, nhưng `load` và put đầu tiên của ván mới vẫn phải đi sau chúng.
+ */
+const pendingEnds = new Map<string, Set<Promise<void>>>();
+
 /** Luật lưu ván dở: khách chỉ dùng localStorage; tài khoản dùng cloud kèm bản sao cục bộ (spec 3.1, 6). */
 export class SaveManager {
   readonly deviceId: string;
@@ -41,8 +47,6 @@ export class SaveManager {
   private inflight: Promise<unknown> | null = null;
   /** `savedAt` các bản put lỗi mạng của ván này: server có thể đã ghi mà máy không nhận được trả lời (hết giờ). */
   private uncertain: { runId: string; savedAt: number[] } | null = null;
-  /** Các lệnh `end` chưa xong; put đầu tiên của ván mới phải đi sau chúng. */
-  private readonly pendingEnds = new Set<Promise<void>>();
 
   constructor(opts: { store: KeyValueStore | null; cloud: CloudSaves | null; userId: string | null }) {
     this.store = opts.store;
@@ -60,7 +64,18 @@ export class SaveManager {
     return this.signedIn ? accountKey(this.userId) : GUEST_KEY;
   }
 
+  private get endsKey(): string {
+    return this.signedIn ? this.userId : 'guest';
+  }
+
+  /** Chờ các lệnh `end` đang có lúc gọi (end mới hơn có thể chờ ngược lại put đang gửi → không chờ chúng). */
+  private async awaitEnds(): Promise<void> {
+    const set = pendingEnds.get(this.endsKey);
+    if (set) await Promise.all([...set]);
+  }
+
   async load(): Promise<StartInfo> {
+    await this.awaitEnds();
     return this.signedIn ? this.loadAccount(true) : this.loadGuest();
   }
 
@@ -91,11 +106,15 @@ export class SaveManager {
       if ((await this.cloudEnd(runId, known)) === 'error') addEnded(this.store, this.userId, runId, known);
       else removeEnded(this.store, this.userId, runId);
     })();
-    this.pendingEnds.add(p);
+    const k = this.endsKey;
+    let set = pendingEnds.get(k);
+    if (!set) pendingEnds.set(k, (set = new Set()));
+    set.add(p);
     try {
       await p;
     } finally {
-      this.pendingEnds.delete(p);
+      set.delete(p);
+      if (!set.size && pendingEnds.get(k) === set) pendingEnds.delete(k);
     }
   }
 
@@ -318,7 +337,7 @@ export class SaveManager {
       if (!this.cloud) return { ok: false, error: 'network' };
       if (baseRev === 0) {
         // Chỉ chờ các end đã có lúc này (end mới hơn lại chờ put này) → không khóa vòng.
-        await Promise.all([...this.pendingEnds]);
+        await this.awaitEnds();
         if (readEnded(this.store, this.userId).length) await this.flushEnded();
       }
       const r = await this.cloud.put(runId, baseRev, save);

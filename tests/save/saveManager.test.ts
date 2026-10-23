@@ -587,6 +587,36 @@ describe('tài khoản', () => {
     expect(cloud.row).toMatchObject({ runId: 'r2', rev: 1 });
   });
 
+  test('tài khoản: end của manager cũ chưa xong → load của manager mới chờ nó, không tính thua lần hai', async () => {
+    const store = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(store, cloud);
+    expect(await a.save(mk({ inWave: true }))).toBe('ok');
+    const releaseEnd = cloud.holdEnd();
+    void a.end('r1');
+    const p = acct(store, cloud).load();
+    await new Promise((r) => setTimeout(r, 0));
+    releaseEnd();
+    expect(await p).toEqual({ kind: 'none' });
+    expect(cloud.endCalls).toEqual(['r1']);
+    expect(cloud.row).toBeNull();
+  });
+
+  test('tài khoản: put ván mới của manager mới đi sau end của manager cũ', async () => {
+    const store = device('dev-A');
+    const cloud = fakeCloud();
+    const a = acct(store, cloud);
+    expect(await a.save(mk({ runId: 'r1' }))).toBe('ok');
+    const releaseEnd = cloud.holdEnd();
+    void a.end('r1');
+    const p = acct(store, cloud).save(mk({ runId: 'r2' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cloud.baseRevs).toEqual([0]);
+    releaseEnd();
+    expect(await p).toBe('ok');
+    expect(cloud.row).toMatchObject({ runId: 'r2', rev: 1 });
+  });
+
   test('tài khoản: store bị chặn vẫn lưu lên cloud', async () => {
     const cloud = fakeCloud();
     const m = acct(bad, cloud);
