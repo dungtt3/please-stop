@@ -51,7 +51,7 @@ export class StartScene extends Phaser.Scene {
       console.error('StartScene: không tải được màn hình bắt đầu', e);
       if (g !== this.gen) return;
       loading.destroy();
-      this.draw(new SaveManager({ store: browserStore(), cloud: null, userId: null }), null, { kind: 'none' });
+      this.draw(new SaveManager({ store: browserStore(), cloud: null, userId: null }), null, { kind: 'none' }, false);
       this.busy = false;
     });
   }
@@ -76,13 +76,16 @@ export class StartScene extends Phaser.Scene {
     }
     let info = await manager.load();
     if (dead()) return;
+    // Nhớ để vẫn báo "Không đọc được ván đã lưu" khi ván khách được nhận thay chỗ.
+    const unreadable = info.kind === 'invalid';
 
     if (account && guest) {
-      if (info.kind === 'none' || info.kind === 'lost') {
+      // 'lost' không gộp lần này (ván khách ở yên trên máy, lần vào sau sẽ gộp hoặc hỏi) để "Chơi lại" không đụng dòng vừa gộp.
+      if (info.kind === 'none' || info.kind === 'invalid') {
         // 'conflict': ván khách giữ nguyên trên máy này, hiện trạng thái tài khoản như chưa gộp (R2).
         const r = await manager.adoptGuest();
         if (dead()) return;
-        if (r !== 'conflict' && info.kind === 'none') info = { kind: 'resume', save: guest };
+        if (r !== 'conflict') info = { kind: 'resume', save: guest };
       } else if (info.kind === 'resume') {
         const keepDevice =
           (await this.ask('Giữ ván nào?', [
@@ -112,17 +115,17 @@ export class StartScene extends Phaser.Scene {
     }
 
     loading.destroy();
-    this.draw(manager, account, info);
+    this.draw(manager, account, info, unreadable);
     this.busy = false;
   }
 
-  private draw(manager: SaveManager, account: Account | null, info: StartInfo): void {
+  private draw(manager: SaveManager, account: Account | null, info: StartInfo, unreadable: boolean): void {
     const cx = GAME_W / 2;
     const g = this.gen;
     const stale = (): boolean => g !== this.gen;
     const notes: string[] = [];
     if (manager.offline) notes.push('Không kết nối được, đang dùng bản lưu trên máy này');
-    if (info.kind === 'invalid') notes.push('Không đọc được ván đã lưu');
+    if (unreadable) notes.push('Không đọc được ván đã lưu');
     notes.forEach((n, i) => {
       if (i === 0) this.toast.show(n);
       else this.time.delayedCall(i * 1700, () => this.toast.show(n));
