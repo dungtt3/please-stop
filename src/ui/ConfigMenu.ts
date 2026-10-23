@@ -475,15 +475,17 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     setCloudBusy(true);
     setStatus('Đang lưu lên cloud...');
     let r: CloudWrite;
+    // Chụp bản gửi đi: draft có thể bị sửa trong lúc chờ, nhưng cloud chỉ có bản này.
+    const sent = structuredClone(draft);
     try {
-      r = await opts.onCloudSave(structuredClone(draft));
+      r = await opts.onCloudSave(sent);
     } catch {
       r = { ok: false, error: 'network' };
     } finally {
       setCloudBusy(false);
     }
     if (r.ok) {
-      cloudCfg = structuredClone(draft);
+      cloudCfg = sent;
       cloudSrc.textContent = sourceLine(r.updatedAt);
       setStatus('Đã lưu lên cloud — người chơi nhận bộ số mới ở ván sau', 'ok');
     }
