@@ -1,4 +1,4 @@
-import { checkAdminCode, clearActiveConfig, fetchActiveConfig, saveActiveConfig } from '../net/cloud';
+import { checkAdminCode, clearActiveConfig, deletePreset, fetchActiveConfig, listPresets, saveActiveConfig, savePreset } from '../net/cloud';
 import { openConfigMenu } from '../ui/ConfigMenu';
 import { reloadAdmin, unlockAdmin, type AdminView } from './adminFlow';
 
@@ -82,6 +82,11 @@ function show(view: AdminView): void {
       note: view.note,
       onCloudSave: (cfg) => saveActiveConfig(adminCode, cfg),
       onCloudClear: () => clearActiveConfig(adminCode),
+      presets: {
+        list: () => listPresets(adminCode),
+        save: (name, cfg) => savePreset(adminCode, name, cfg),
+        remove: (name) => deletePreset(adminCode, name),
+      },
     });
   }
 }

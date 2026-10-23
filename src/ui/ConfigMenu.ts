@@ -1,7 +1,9 @@
 import { DEFAULT_CONFIG, type GameConfig } from '../config';
 import { enumOptions, exportConfig, importConfig, isFixedArray, mergeConfig, stripIndices } from '../settings/configStore';
 import { labelFor } from '../settings/labels';
-import type { CloudClear, CloudWrite } from '../net/cloud';
+import type { CloudClear, CloudWrite, PresetsApi } from '../net/cloud';
+import { isDraftDirty } from '../admin/presets';
+import { createPresetsSection } from './presetsSection';
 
 export interface ConfigMenuOptions {
   current: GameConfig;
@@ -13,6 +15,8 @@ export interface ConfigMenuOptions {
   note: string | null;
   onCloudSave(cfg: GameConfig): Promise<CloudWrite>;
   onCloudClear(): Promise<CloudClear>;
+  /** Có thì menu hiện phần "Bộ đã lưu" (bộ cấu hình đặt tên, chỉ admin). */
+  presets?: PresetsApi;
   /** Có thì menu là một lớp phủ đóng được; không có thì menu chiếm cả trang (trang /admin). */
   onClose?(): void;
 }
@@ -128,6 +132,8 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   let draft: GameConfig = structuredClone(opts.current);
   /** Bản đang lưu trên cloud (cập nhật sau khi Lưu/Gỡ thành công). */
   let cloudCfg: GameConfig | null = opts.cloudConfig;
+  /** Mốc "đã lưu/đã nạp" gần nhất của bản nháp (để biết có thay đổi chưa lưu). */
+  let baseline: GameConfig = structuredClone(opts.current);
   const invalid = new Set<string>();
   const openPaths = new Set<string>(['@Kinh tế']);
 
@@ -212,6 +218,27 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
   function showErrors(lines: string[]): void {
     errBox.replaceChildren(...lines.map((l) => el('li', undefined, l)));
   }
+
+  // ---------- Bộ cấu hình đặt tên ----------
+  const presetsSection = opts.presets
+    ? createPresetsSection({
+        api: opts.presets,
+        getDraft: () => draft,
+        isBlocked: () => saveBlocked,
+        isDirty: () => invalid.size > 0 || isDraftDirty(draft, baseline),
+        onSaved: (snapshot) => {
+          baseline = structuredClone(snapshot);
+        },
+        onLoad: (cfg) => {
+          draft = structuredClone(cfg);
+          baseline = structuredClone(cfg);
+          invalid.clear();
+          errBox.dataset.import = '';
+          renderForm();
+        },
+        setStatus,
+      })
+    : null;
 
   // ---------- Form ----------
   function isDirty(path: string, value: unknown): boolean {
@@ -386,7 +413,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
 
   function renderForm(): void {
     const scroll = body.scrollTop;
-    body.replaceChildren(errBox);
+    body.replaceChildren(errBox, ...(presetsSection ? [presetsSection.root] : []));
     const used = new Set<string>();
     const topKeys = Object.keys(draft);
     const mk = (title: string, keys: string[]): void => {
@@ -436,6 +463,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     if (resetBtn.classList.contains('danger')) {
       cancelResetConfirm();
       draft = structuredClone(cloudCfg ?? DEFAULT_CONFIG);
+      baseline = structuredClone(draft);
       invalid.clear();
       errBox.dataset.import = '';
       renderForm();
@@ -486,6 +514,7 @@ export function openConfigMenu(opts: ConfigMenuOptions): void {
     }
     if (r.ok) {
       cloudCfg = sent;
+      baseline = structuredClone(sent);
       cloudSrc.textContent = sourceLine(r.updatedAt);
       setStatus('Đã lưu lên cloud — người chơi nhận bộ số mới ở ván sau', 'ok');
     }
