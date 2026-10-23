@@ -181,9 +181,16 @@ export function createPresetsSection(deps: PresetsSectionDeps): { root: HTMLElem
     sync();
   };
 
+  const BLOCKED_MSG = 'Bản nháp đang có lỗi — sửa xong mới lưu thành bộ được';
+
   async function doSave(name: string): Promise<void> {
     if (busy) return;
     ask(null);
+    // Kiểm lại ở đây: bản nháp có thể bị sửa sai trong lúc hộp "Ghi đè" đang mở.
+    if (deps.isBlocked()) {
+      deps.setStatus(BLOCKED_MSG, 'bad');
+      return;
+    }
     setBusy(true);
     deps.setStatus('Đang lưu bộ…');
     // Chụp bản gửi đi: bản nháp có thể bị sửa trong lúc chờ, nhưng bộ chỉ có bản này.
@@ -213,7 +220,7 @@ export function createPresetsSection(deps: PresetsSectionDeps): { root: HTMLElem
       return;
     }
     if (deps.isBlocked()) {
-      deps.setStatus('Bản nháp đang có lỗi — sửa xong mới lưu thành bộ được', 'bad');
+      deps.setStatus(BLOCKED_MSG, 'bad');
       return;
     }
     const plan = planSave(presets, v.name);
