@@ -38,6 +38,10 @@ export class SaveManager {
   /** Lệnh put đang chạy (tuần tự) và những lần `save` đang chờ kết quả lần đẩy kế tiếp. */
   private queue: Promise<void> | null = null;
   private waiting: ((r: SaveResult) => void)[] | null = null;
+  /** Lệnh put đang gửi (để `end` chờ đúng lệnh này, không chờ các lần lưu xếp hàng sau nó). */
+  private inflight: Promise<unknown> | null = null;
+  /** Các lệnh `end` chưa xong; put đầu tiên của ván mới phải đi sau chúng. */
+  private readonly pendingEnds = new Set<Promise<void>>();
 
   constructor(opts: { store: KeyValueStore | null; cloud: CloudSaves | null; userId: string | null; now?: () => number }) {
     this.store = opts.store;
@@ -76,10 +80,19 @@ export class SaveManager {
     const l = readLocal(this.store, this.key);
     if (l && l !== 'invalid' && l.save.runId === runId) removeLocal(this.store, this.key);
     if (!this.signedIn || this.stopped) return;
-    // Chờ put đang chạy xong, để nó không ghi lại dòng vừa bị xóa.
-    if (this.queue) await this.queue;
-    if ((await this.cloudEnd(runId)) === 'error') addEnded(this.store, this.userId, runId);
-    else removeEnded(this.store, this.userId, runId);
+    // Chỉ chờ put đang gửi (nó có thể ghi lại dòng vừa bị xóa); put xếp hàng sau thì chờ ngược lại end này.
+    const prior = this.inflight;
+    const p = (async () => {
+      await prior;
+      if ((await this.cloudEnd(runId)) === 'error') addEnded(this.store, this.userId, runId);
+      else removeEnded(this.store, this.userId, runId);
+    })();
+    this.pendingEnds.add(p);
+    try {
+      await p;
+    } finally {
+      this.pendingEnds.delete(p);
+    }
   }
 
   checkGuest(): GuestCheck {
@@ -258,11 +271,24 @@ export class SaveManager {
     }
   }
 
-  /** Ván mới (`baseRev` 0) bị chặn nếu dòng của ván cũ chưa xóa được → gửi lại các end còn treo trước. */
-  private async cloudPut(runId: string, baseRev: number, save: RunSave): Promise<PutResult> {
+  private cloudPut(runId: string, baseRev: number, save: RunSave): Promise<PutResult> {
+    const p = this.sendPut(runId, baseRev, save);
+    this.inflight = p;
+    void p.then(() => {
+      if (this.inflight === p) this.inflight = null;
+    });
+    return p;
+  }
+
+  /** Ván mới (`baseRev` 0) bị dòng của ván cũ chặn → chờ các end đang gửi và gửi lại các end còn treo trước. */
+  private async sendPut(runId: string, baseRev: number, save: RunSave): Promise<PutResult> {
     try {
       if (!this.cloud) return { ok: false, error: 'network' };
-      if (baseRev === 0 && readEnded(this.store, this.userId).length) await this.flushEnded();
+      if (baseRev === 0) {
+        // Chỉ chờ các end đã có lúc này (end mới hơn lại chờ put này) → không khóa vòng.
+        await Promise.all([...this.pendingEnds]);
+        if (readEnded(this.store, this.userId).length) await this.flushEnded();
+      }
       return await this.cloud.put(runId, baseRev, save);
     } catch {
       return { ok: false, error: 'network' };

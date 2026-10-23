@@ -39,6 +39,7 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
     endFails: false,
     hang: opts.hang ?? false,
     gate: null as Promise<void> | null,
+    endGate: null as Promise<void> | null,
     baseRevs: [] as number[],
     endCalls: [] as string[],
     /** Giữ mọi lệnh put cho đến khi gọi hàm trả về. */
@@ -47,6 +48,15 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
       f.gate = new Promise<void>((r) => (release = r));
       return () => {
         f.gate = null;
+        release();
+      };
+    },
+    /** Giữ mọi lệnh end (server chưa xử lý) cho đến khi gọi hàm trả về. */
+    holdEnd(): () => void {
+      let release!: () => void;
+      f.endGate = new Promise<void>((r) => (release = r));
+      return () => {
+        f.endGate = null;
         release();
       };
     },
@@ -71,6 +81,7 @@ function fakeCloud(opts: { hang?: boolean } = {}) {
     },
     async end(runId: string): Promise<boolean | 'error'> {
       f.endCalls.push(runId);
+      if (f.endGate) await f.endGate;
       if (f.offline || f.endFails) return 'error';
       if (f.row?.runId !== runId) return false;
       f.row = null;
@@ -424,6 +435,34 @@ describe('tài khoản', () => {
     release();
     await Promise.all([p, e]);
     expect(cloud.row).toBeNull();
+  });
+
+  test('tài khoản: end khi put đang chạy rồi ván mới → put ván mới đi sau end, không conflict', async () => {
+    const cloud = fakeCloud();
+    const m = acct(device('dev-A'), cloud);
+    const release = cloud.hold();
+    const pa = m.save(mk({ runId: 'r1' }));
+    const e = m.end('r1');
+    const pb = m.save(mk({ runId: 'r2' }));
+    release();
+    expect(await Promise.all([pa, e, pb])).toEqual(['ok', undefined, 'ok']);
+    expect(cloud.row).toMatchObject({ runId: 'r2', rev: 1 });
+    expect(await m.save(mk({ runId: 'r2', gold: 1 }))).toBe('ok');
+  });
+
+  test('tài khoản: end chưa xong (không await, server chậm) → put đầu của ván mới chờ end', async () => {
+    const cloud = fakeCloud();
+    const m = acct(device('dev-A'), cloud);
+    expect(await m.save(mk({ runId: 'r1' }))).toBe('ok');
+    const releaseEnd = cloud.holdEnd();
+    void m.end('r1');
+    const pb = m.save(mk({ runId: 'r2' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cloud.baseRevs).toEqual([0]);
+    releaseEnd();
+    expect(await pb).toBe('ok');
+    expect(cloud.baseRevs).toEqual([0, 0]);
+    expect(cloud.row).toMatchObject({ runId: 'r2', rev: 1 });
   });
 
   test('tài khoản: store bị chặn vẫn lưu lên cloud', async () => {
