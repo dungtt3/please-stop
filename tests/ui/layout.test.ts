@@ -72,7 +72,7 @@ describe('touch targets', () => {
   it('every visual rect sits inside its hit rect', () => {
     for (const b of [
       LAYOUT.top.gear, LAYOUT.top.speed, ...LAYOUT.bottom.buttons, ...LAYOUT.hand.cards, LAYOUT.hand.discard, LAYOUT.panel.sell,
-      LAYOUT.popup.continue, LAYOUT.popup.sound, LAYOUT.popup.home, LAYOUT.popup.confirm.yes, LAYOUT.popup.confirm.no,
+      LAYOUT.popup.continue, LAYOUT.popup.restart, LAYOUT.popup.sound, LAYOUT.popup.motion, LAYOUT.popup.home, LAYOUT.popup.confirm.yes, LAYOUT.popup.confirm.no,
       LAYOUT.start.main, LAYOUT.start.secondary, LAYOUT.start.signOut, LAYOUT.result.replay, LAYOUT.result.home,
     ]) {
       const p = padOf(b);
@@ -93,6 +93,32 @@ describe('touch targets', () => {
     expect(s.hit.x).toBeLessThanOrEqual(s.x - s.knobR);
     expect(rightOf(s.hit)).toBeGreaterThanOrEqual(s.x + s.w + s.knobR);
     expect(contains(s.hit, s.x, s.y)).toBe(true);
+  });
+});
+
+describe('pause popup', () => {
+  const pop = LAYOUT.popup;
+  it('lists restart and motion hits', () => {
+    const ids = hitAreas('pause').map((h) => h.id);
+    expect(ids).toEqual(expect.arrayContaining(['pause.continue', 'pause.restart', 'pause.sound', 'pause.volume', 'pause.motion', 'pause.home']));
+  });
+  it('rows run top to bottom in the spec order', () => {
+    const ys = [pop.continue, pop.restart, pop.sound, { hit: pop.slider.hit }, pop.motion, pop.home].map((b) => b.hit.y);
+    expect([...ys].sort((a, b) => a - b)).toEqual(ys);
+  });
+  it('every hit and the status line sit inside the popup box', () => {
+    for (const h of hitAreas('pause')) {
+      expect(h.hit.y, h.id).toBeGreaterThanOrEqual(pop.box.y);
+      expect(bottomOf(h.hit), h.id).toBeLessThanOrEqual(bottomOf(pop.box));
+      expect(h.hit.x, h.id).toBeGreaterThanOrEqual(pop.box.x);
+      expect(rightOf(h.hit), h.id).toBeLessThanOrEqual(rightOf(pop.box));
+    }
+    const lowest = Math.max(...hitAreas('pause').map((h) => bottomOf(h.hit)));
+    expect(pop.statusY - 14).toBeGreaterThanOrEqual(lowest);
+    expect(pop.statusY + 14).toBeLessThanOrEqual(bottomOf(pop.box));
+  });
+  it('fades in at most 200 ms', () => {
+    expect(pop.fadeMs).toBeLessThanOrEqual(200);
   });
 });
 

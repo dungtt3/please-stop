@@ -26,6 +26,8 @@ import { recordBest } from '../save/best';
 import { SaveManager } from '../save/SaveManager';
 import { RunSaver } from './RunSaver';
 import { PointerShield } from './PointerShield';
+import { runRestart } from './restartFlow';
+import { isEditableTarget, keyAction } from '../ui/keys';
 import { getCloudCache, refreshCloudCache } from '../net/cloudCache';
 import { boardTile, topBarOwns } from '../ui/layout';
 import { BOTTOM_H, COLORS, GAME_H, MAP_LEFT, MAX_TILE, TOP_BAR_H, textStyle } from '../ui/theme';
@@ -181,7 +183,35 @@ export class GameScene extends Phaser.Scene {
         if (this.saver.live) this.recordResult(false);
         this.scene.start('Start');
       },
+      restart: () => {
+        // Ghi thua đúng một lần (recordResult tự chống ghi lại, kể cả kỷ lục) rồi chơi ván mới.
+        runRestart({
+          halted: () => this.halted,
+          live: () => this.saver.live,
+          recordLoss: () => this.recordResult(false),
+          restart: () => this.restart(),
+          closePopup: () => this.pauseMenu.close(),
+        });
+      },
     });
+
+    // Phím tắt: một listener cho cả scene, gỡ khi SHUTDOWN. Bỏ qua phím gõ vào ô nhập tên (DOM).
+    const onKey = (e: KeyboardEvent): void => {
+      const act = keyAction(e.key, {
+        popupOpen: this.pauseMenu.open,
+        confirmOpen: this.pauseMenu.confirming,
+        blocked: this.resultScreen.open || this.quizModal.open || this.halted,
+        targetEditable: isEditableTarget(e.target),
+        modifier: e.ctrlKey || e.altKey || e.metaKey,
+        repeat: e.repeat,
+      });
+      if (act === null) return;
+      e.preventDefault(); // Space không cuộn trang
+      if (act === 'open') this.openMenu();
+      else if (act === 'close') this.pauseMenu.requestClose();
+      else this.pauseMenu.cancelConfirm();
+    };
+    window.addEventListener('keydown', onKey);
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
@@ -201,6 +231,7 @@ export class GameScene extends Phaser.Scene {
     document.addEventListener('visibilitychange', onVisibility);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('keydown', onKey);
       this.menuOpen = false;
       sfx.setSuspended(document.visibilityState === 'hidden');
       this.saver.stop();
@@ -522,7 +553,10 @@ ${m}` : `Wave ${e.wave}`);
         this.banner.show(`+${e.reward} vàng`, COLORS.gold);
         break;
       case 'leak':
-        if (motion.reduced) this.leakCue();
+        if (motion.reduced) {
+          this.leakCue();
+          this.topBar.pulseHp();
+        }
         else if (this.shakeGate.allow()) this.cameras.main.shake(150, 0.002);
         sfx.play('leak');
         break;

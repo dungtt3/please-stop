@@ -177,21 +177,35 @@ const QUIZ_ANSWERS = [0, 1, 2, 3].map((i) =>
   btn(QUIZ_X + 30 + (i % 2) * (340 + 20), QUIZ_Y + 165 + Math.floor(i / 2) * (90 + 14), 340, 90),
 );
 
-// --- Popup tạm dừng.
+// --- Popup tạm dừng: 6 hàng xếp dọc, mỗi hàng có vùng chạm cao 82, cách nhau 8.
+// Tiêu đề → Tiếp tục → Chơi lại → Âm thanh (bật/tắt) → thanh âm lượng → Giảm chuyển động → Màn hình chính.
 const POP_W = 560;
-const POP_H = 500;
+const POP_H = 680;
 const POP_X = CX - POP_W / 2;
 const POP_Y = (GAME_H - POP_H) / 2;
 const POP_BTN_H = 72;
 const POP_PAD = (MIN_HIT - POP_BTN_H) / 2;
-const POP_CONTINUE = btn(POP_X + 40, POP_Y + 86, POP_W - 80, POP_BTN_H, { y: POP_PAD });
-const POP_SOUND = btn(POP_X + POP_W - 40 - 140, POP_Y + 180, 140, 64, { y: (MIN_HIT - 64) / 2 });
-const SLIDER_Y = POP_Y + 302;
+const POP_FIRST_ROW = 70;
+/** Đỉnh vùng chạm của hàng thứ `i` của popup. */
+const popRow = (i: number): number => POP_Y + POP_FIRST_ROW + i * (MIN_HIT + MIN_GAP);
+const POP_TOGGLE_W = 140;
+const POP_TOGGLE_H = 64;
+const POP_TOGGLE_PAD = (MIN_HIT - POP_TOGGLE_H) / 2;
+const popToggle = (row: number): Btn =>
+  btn(POP_X + POP_W - 40 - POP_TOGGLE_W, popRow(row) + POP_TOGGLE_PAD, POP_TOGGLE_W, POP_TOGGLE_H, { y: POP_TOGGLE_PAD });
+const popWide = (row: number): Btn => btn(POP_X + 40, popRow(row) + POP_PAD, POP_W - 80, POP_BTN_H, { y: POP_PAD });
+const POP_CONTINUE = popWide(0);
+const POP_RESTART = popWide(1);
+const POP_SOUND = popToggle(2);
+const SLIDER_Y = popRow(3) + MIN_HIT / 2;
 const SLIDER_X = POP_X + 40;
 const SLIDER_W = POP_W - 80 - 90;
 const KNOB_R = 16;
 const SLIDER_HIT = rect(SLIDER_X - KNOB_R, SLIDER_Y - MIN_HIT / 2, SLIDER_W + 2 * KNOB_R, MIN_HIT);
-const POP_HOME = btn(POP_X + 40, POP_Y + 356, POP_W - 80, POP_BTN_H, { y: POP_PAD });
+const POP_MOTION = popToggle(4);
+const POP_HOME = popWide(5);
+/** Popup và hộp xác nhận mờ vào/ra trong chừng này ms (hiện ngay khi giảm chuyển động). */
+const POP_FADE_MS = 150;
 
 const CONF_W = 520;
 const CONF_H = 250;
@@ -252,10 +266,11 @@ export const LAYOUT = {
   quiz: { box: rect(QUIZ_X, QUIZ_Y, QUIZ_W, QUIZ_H), answers: QUIZ_ANSWERS },
   popup: {
     box: rect(POP_X, POP_Y, POP_W, POP_H), titleY: POP_Y + 44,
-    continue: POP_CONTINUE,
+    continue: POP_CONTINUE, restart: POP_RESTART,
     soundLabelY: POP_SOUND.rect.y + POP_SOUND.rect.h / 2, sound: POP_SOUND,
     slider: { x: SLIDER_X, y: SLIDER_Y, w: SLIDER_W, knobR: KNOB_R, hit: SLIDER_HIT },
-    home: POP_HOME, statusY: POP_Y + 462,
+    motionLabelY: POP_MOTION.rect.y + POP_MOTION.rect.h / 2, motion: POP_MOTION,
+    home: POP_HOME, statusY: POP_Y + POP_H - 38, fadeMs: POP_FADE_MS,
     confirm: { box: rect(CONF_X, CONF_Y, CONF_W, CONF_H), textY: CONF_Y + 70, yes: CONF_YES, no: CONF_NO },
   },
   start: {
@@ -310,8 +325,10 @@ export function hitAreas(screen: Screen): HitArea[] {
     case 'pause':
       return [
         entry('pause.continue', POP_CONTINUE),
+        entry('pause.restart', POP_RESTART),
         entry('pause.sound', POP_SOUND),
         { id: 'pause.volume', hit: SLIDER_HIT },
+        entry('pause.motion', POP_MOTION),
         entry('pause.home', POP_HOME),
       ];
     case 'confirm':
