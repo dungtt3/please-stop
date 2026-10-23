@@ -2,6 +2,9 @@ import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene';
 import { StartScene } from './scenes/StartScene';
 import { refreshCloudCache } from './net/cloudCache';
+import { installAudioUnlock } from './audio/sfx';
+
+installAudioUnlock();
 
 async function boot(): Promise<void> {
   try {

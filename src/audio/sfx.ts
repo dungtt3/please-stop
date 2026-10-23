@@ -122,15 +122,24 @@ export class Sfx {
 
   get settings(): SoundSettings { return { ...this.cfg }; }
 
-  set(s: Partial<SoundSettings>): void {
+  /** Đổi cài đặt; mặc định ghi store ngay. `persist:false` chỉ đổi trong bộ nhớ (kéo thanh âm lượng), sau đó gọi `persist()`. */
+  set(s: Partial<SoundSettings>, opts: { persist?: boolean } = {}): void {
     const next = { ...this.cfg };
     if (typeof s.on === 'boolean') next.on = s.on;
     if (typeof s.volume === 'number') next.volume = Number.isNaN(s.volume) ? next.volume : clamp01(s.volume);
     this.cfg = next;
-    saveSoundSettings(this.store, next);
+    if (opts.persist !== false) saveSoundSettings(this.store, next);
   }
 
-  /** Gọi ở lần bấm đầu tiên: tạo/resume context nếu âm thanh đang bật. */
+  /** Ghi cài đặt hiện tại vào store. */
+  persist(): void {
+    saveSoundSettings(this.store, this.cfg);
+  }
+
+  /**
+   * Gọi từ một sự kiện kích hoạt người dùng (pointerup/touchend/click/keydown): tạo context nếu âm thanh đang bật
+   * và thử resume lại mỗi lần cho tới khi context chạy (idempotent). Không resume khi đang bị popup/tab ẩn tạm dừng.
+   */
   unlock(): void {
     try {
       if (!this.cfg.on) return;
@@ -162,6 +171,8 @@ export class Sfx {
     try {
       const ctx = this.ctx;
       if (!ctx || !this.unlocked || this.suspended || !this.cfg.on || this.cfg.volume <= 0) return;
+      // Context chưa chạy (bị trình duyệt chặn): lên lịch bây giờ thì khi resume mọi tiếng sẽ phát cùng lúc.
+      if (ctx.state !== 'running') return;
       const tones = SOUNDS[name];
       if (!tones) return;
       const t = this.now();
@@ -227,3 +238,23 @@ export const sfx = new Sfx({
   },
   store: browserStore(),
 });
+
+/** Chỉ các sự kiện này mới tính là kích hoạt người dùng (pointerdown/touchstart thì không, nhất là trên iOS). */
+export const UNLOCK_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
+
+const installed = new WeakSet<object>();
+
+/** Gắn một lần bộ mở khóa âm thanh ở cấp document. Không bao giờ ném. */
+export function installAudioUnlock(
+  target: Pick<EventTarget, 'addEventListener'> | null = typeof document !== 'undefined' ? document : null,
+  s: Sfx = sfx,
+): void {
+  try {
+    if (!target || installed.has(target)) return;
+    installed.add(target);
+    const handler = (): void => s.unlock();
+    for (const ev of UNLOCK_EVENTS) target.addEventListener(ev, handler, { capture: true, passive: true });
+  } catch {
+    /* không có âm thanh thì thôi */
+  }
+}

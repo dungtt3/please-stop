@@ -43,7 +43,7 @@ export class PauseMenu {
     if (this.dragging) this.setFromX(p.x);
   };
   private readonly onUp = (): void => {
-    this.dragging = false;
+    this.endDrag();
   };
 
   constructor(private scene: Phaser.Scene, private hooks: PauseMenuHooks) {
@@ -82,7 +82,7 @@ export class PauseMenu {
     this.scene.input.off('pointermove', this.onMove);
     this.scene.input.off('pointerup', this.onUp);
     this.scene.input.off('pointerupoutside', this.onUp);
-    this.dragging = false;
+    this.endDrag();
     this.destroyConfirm();
     for (const b of this.buttons) {
       b.bg.destroy();
@@ -161,8 +161,15 @@ export class PauseMenu {
   private setFromX(x: number): void {
     if (!this.isOpen || this.busy) return;
     const v = Math.min(1, Math.max(0, (x - this.trackX) / this.trackW));
-    sfx.set({ volume: Math.round(v * 100) / 100 });
+    // Kéo: đổi âm lượng ngay nhưng chưa ghi localStorage; ghi một lần khi thả (endDrag).
+    sfx.set({ volume: Math.round(v * 100) / 100 }, { persist: false });
     this.refreshSound();
+  }
+
+  private endDrag(): void {
+    if (!this.dragging) return;
+    this.dragging = false;
+    sfx.persist();
   }
 
   private toggleSound(): void {

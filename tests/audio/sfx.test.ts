@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
-  Sfx, SFX_MAX_VOICES, SFX_THROTTLE_MS, SOUND_KEY, loadSoundSettings, saveSoundSettings, sfx,
+  Sfx, SFX_MAX_VOICES, SFX_THROTTLE_MS, SOUND_KEY, UNLOCK_EVENTS, installAudioUnlock, loadSoundSettings, saveSoundSettings, sfx,
   type AudioContextLike, type SfxName,
 } from '../../src/audio/sfx';
 import type { KeyValueStore } from '../../src/settings/configStore';
@@ -87,6 +87,24 @@ describe('Sfx settings', () => {
     s.set({ on: false });
     expect(JSON.parse(st.data[SOUND_KEY])).toEqual({ on: false, volume: 0.2 });
     expect(s.settings).toEqual({ on: false, volume: 0.2 });
+  });
+  test('set với persist:false đổi âm lượng nhưng không ghi store; persist() ghi một lần', () => {
+    const st = mem();
+    const setItem = vi.spyOn(st, 'setItem');
+    const { s } = setup({ store: st });
+    s.set({ volume: 0.1 }, { persist: false });
+    s.set({ volume: 0.2 }, { persist: false });
+    s.set({ volume: 0.3 }, { persist: false });
+    expect(s.settings.volume).toBe(0.3);
+    expect(setItem).not.toHaveBeenCalled();
+    s.persist();
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(st.data[SOUND_KEY])).toEqual({ on: true, volume: 0.3 });
+  });
+  test('persist không ném khi store ném', () => {
+    const bad: KeyValueStore = { getItem: () => null, setItem: () => { throw new Error('x'); }, removeItem: () => {} };
+    const s = new Sfx({ createContext: () => null, store: bad });
+    expect(() => { s.set({ volume: 0.4 }, { persist: false }); s.persist(); }).not.toThrow();
   });
   test('set kẹp volume', () => {
     const { s } = setup();
@@ -189,6 +207,75 @@ describe('Sfx.play', () => {
     s.setSuspended(false);
     s.play('click');
     expect(ctx.oscillators.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Sfx trạng thái context', () => {
+  test('context chưa chạy (suspended): play không làm gì, chạy rồi thì phát', () => {
+    const { s, ctx } = setup();
+    ctx.state = 'suspended';
+    s.unlock();
+    s.play('click');
+    expect(ctx.oscillators).toHaveLength(0);
+    ctx.state = 'running';
+    s.play('click');
+    expect(ctx.oscillators.length).toBeGreaterThan(0);
+  });
+  test('unlock thử resume lại mỗi lần cho đến khi context chạy', () => {
+    const { s, ctx } = setup();
+    ctx.state = 'suspended';
+    s.unlock();
+    s.unlock();
+    s.unlock();
+    expect(ctx.resume).toHaveBeenCalledTimes(3);
+    ctx.state = 'running';
+    s.unlock();
+    expect(ctx.resume).toHaveBeenCalledTimes(3);
+  });
+  test('đóng popup rồi unlock ở lần chạm sau vẫn resume nếu context chưa chạy', () => {
+    const { s, ctx } = setup();
+    s.unlock();
+    s.setSuspended(true);
+    ctx.state = 'suspended';
+    s.setSuspended(false);
+    ctx.resume.mockClear();
+    s.unlock();
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('installAudioUnlock', () => {
+  const fakeTarget = () => {
+    const handlers = new Map<string, () => void>();
+    const opts = new Map<string, unknown>();
+    return {
+      handlers, opts,
+      addEventListener: vi.fn((type: string, fn: () => void, o?: unknown) => { handlers.set(type, fn); opts.set(type, o); }),
+    };
+  };
+  test('gắn đúng các sự kiện kích hoạt người dùng, capture + passive, và gọi unlock', () => {
+    const target = fakeTarget();
+    const { s, ctx, createContext } = setup();
+    installAudioUnlock(target, s);
+    expect([...target.handlers.keys()].sort()).toEqual([...UNLOCK_EVENTS].sort());
+    expect(UNLOCK_EVENTS).toEqual(['pointerup', 'touchend', 'click', 'keydown']);
+    for (const o of target.opts.values()) expect(o).toEqual({ capture: true, passive: true });
+    expect(createContext).not.toHaveBeenCalled();
+    target.handlers.get('touchend')!();
+    expect(createContext).toHaveBeenCalledTimes(1);
+    s.play('click');
+    expect(ctx.oscillators.length).toBeGreaterThan(0);
+  });
+  test('chỉ cài một lần cho cùng một target', () => {
+    const target = fakeTarget();
+    const { s } = setup();
+    installAudioUnlock(target, s);
+    installAudioUnlock(target, s);
+    expect(target.addEventListener).toHaveBeenCalledTimes(UNLOCK_EVENTS.length);
+  });
+  test('target hỏng / thiếu document → không ném', () => {
+    expect(() => installAudioUnlock({ addEventListener: () => { throw new Error('x'); } })).not.toThrow();
+    expect(() => installAudioUnlock(null)).not.toThrow();
   });
 });
 
